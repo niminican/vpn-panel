@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
 
+    # Demo mode (skip actual WireGuard/iptables commands)
+    demo_mode: bool = False
+
     # JWT
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7

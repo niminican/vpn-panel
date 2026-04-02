@@ -209,10 +209,15 @@ def start_destination(
 
     import subprocess
 
+    # Demo mode: just toggle the status without running actual commands
+    if settings.demo_mode:
+        dest.is_running = True
+        db.commit()
+        return DestinationVPNStatus(id=dest.id, name=dest.name, is_running=True)
+
     # Check config file exists
     config_path = dest.config_file_path
     if config_path and not Path(config_path).exists():
-        # Try to recreate config file from stored config_text
         if dest.config_text:
             DEST_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             ext = ".conf" if dest.protocol == "wireguard" else ".ovpn"
@@ -228,39 +233,26 @@ def start_destination(
 
     try:
         if dest.protocol == "wireguard":
-            result = subprocess.run(
+            subprocess.run(
                 ["wg-quick", "up", config_path or dest.interface_name],
                 check=True, capture_output=True, text=True, timeout=30,
             )
         elif dest.protocol == "openvpn":
-            result = subprocess.run(
+            subprocess.run(
                 ["systemctl", "start", f"openvpn@{dest.interface_name}"],
                 check=True, capture_output=True, text=True, timeout=30,
             )
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown protocol: {dest.protocol}",
-            )
+            raise HTTPException(status_code=400, detail=f"Unknown protocol: {dest.protocol}")
         dest.is_running = True
         db.commit()
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr or e.stdout or str(e)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start VPN: {error_msg}",
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to start VPN: {error_msg}")
     except subprocess.TimeoutExpired:
-        raise HTTPException(
-            status_code=500,
-            detail="Timeout: VPN took too long to start",
-        )
+        raise HTTPException(status_code=500, detail="Timeout: VPN took too long to start")
 
-    return DestinationVPNStatus(
-        id=dest.id,
-        name=dest.name,
-        is_running=dest.is_running,
-    )
+    return DestinationVPNStatus(id=dest.id, name=dest.name, is_running=dest.is_running)
 
 
 @router.post("/{dest_id}/stop", response_model=DestinationVPNStatus)
@@ -274,6 +266,13 @@ def stop_destination(
         raise NotFoundError("Destination VPN")
 
     import subprocess
+
+    # Demo mode
+    if settings.demo_mode:
+        dest.is_running = False
+        db.commit()
+        return DestinationVPNStatus(id=dest.id, name=dest.name, is_running=False)
+
     try:
         if dest.protocol == "wireguard":
             subprocess.run(
@@ -290,8 +289,4 @@ def stop_destination(
     except subprocess.CalledProcessError:
         pass
 
-    return DestinationVPNStatus(
-        id=dest.id,
-        name=dest.name,
-        is_running=dest.is_running,
-    )
+    return DestinationVPNStatus(id=dest.id, name=dest.name, is_running=dest.is_running)
