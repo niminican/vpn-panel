@@ -30,6 +30,9 @@ export default function Settings() {
   useEffect(() => {
     api.get('/settings').then((res) => {
       setSettings(res.data)
+    }).catch(() => {
+      // Settings may fail but page should still render
+    }).finally(() => {
       setLoading(false)
     })
   }, [])
