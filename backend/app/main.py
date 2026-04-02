@@ -1,0 +1,154 @@
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.config import settings
+from app.database import engine, Base, SessionLocal
+from app.models import *  # noqa: F401, F403 - ensure all models are registered
+from app.models.admin import Admin
+from app.core.security import hash_password
+from app.api import auth, users, destinations, dashboard, whitelist, schedules, logs, alerts, packages
+from app.api import settings as settings_api
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting VPN Panel...")
+    Base.metadata.create_all(bind=engine)
+    _create_default_admin()
+
+    # Start background services
+    _start_services()
+
+    yield
+
+    # Shutdown
+    _stop_services()
+    logger.info("VPN Panel stopped")
+
+
+def _create_default_admin():
+    db = SessionLocal()
+    try:
+        if not db.query(Admin).first():
+            admin = Admin(
+                username=settings.admin_username,
+                password_hash=hash_password(settings.admin_password),
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Created default admin: {settings.admin_username}")
+    finally:
+        db.close()
+
+
+def _start_services():
+    """Start background services: scheduler, connection logger, tc, telegram."""
+    # Start scheduler (bandwidth polling, alerts, health checks)
+    try:
+        from app.services.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        logger.warning(f"Scheduler start failed (non-critical): {e}")
+
+    # Initialize traffic control
+    try:
+        from app.services.traffic_control import rebuild_all
+        db = SessionLocal()
+        rebuild_all(db)
+        db.close()
+    except Exception as e:
+        logger.warning(f"Traffic control init failed (non-critical): {e}")
+
+    # Start connection logger
+    try:
+        from app.services.connection_logger import start
+        start()
+    except Exception as e:
+        logger.warning(f"Connection logger start failed (non-critical): {e}")
+
+    # Initialize connection logging iptables rules
+    try:
+        from app.services.iptables import initialize_logging_for_all
+        db = SessionLocal()
+        initialize_logging_for_all(db)
+        db.close()
+    except Exception as e:
+        logger.warning(f"iptables logging init failed (non-critical): {e}")
+
+
+def _stop_services():
+    """Stop background services."""
+    try:
+        from app.services.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
+
+    try:
+        from app.services.connection_logger import stop
+        stop()
+    except Exception:
+        pass
+
+    try:
+        from app.services.traffic_control import cleanup
+        cleanup()
+    except Exception:
+        pass
+
+
+app = FastAPI(
+    title="VPN Panel",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# API routes
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(destinations.router)
+app.include_router(dashboard.router)
+app.include_router(whitelist.router)
+app.include_router(schedules.router)
+app.include_router(logs.router)
+app.include_router(alerts.router)
+app.include_router(packages.router)
+app.include_router(settings_api.router)
+
+# Telegram bot webhook
+try:
+    from app.telegram.bot import webhook_router, create_bot
+    create_bot()
+    app.include_router(webhook_router)
+except Exception as e:
+    logger.warning(f"Telegram bot setup failed: {e}")
+
+# Serve frontend static files (production)
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
