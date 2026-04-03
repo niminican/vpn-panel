@@ -36,6 +36,15 @@ export default function Users() {
   const [menuOpen, setMenuOpen] = useState<number | null>(null)
   const navigate = useNavigate()
 
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClick = () => setMenuOpen(null)
+    if (menuOpen !== null) {
+      document.addEventListener('click', handleClick)
+      return () => document.removeEventListener('click', handleClick)
+    }
+  }, [menuOpen])
+
   const fetchUsers = async () => {
     try {
       const res = await api.get('/users', { params: { search, limit: 50 } })
