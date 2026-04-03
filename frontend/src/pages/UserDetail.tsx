@@ -12,10 +12,14 @@ import {
   X,
   Save,
   Edit3,
+  Pencil,
 } from 'lucide-react'
 import api from '../api/client'
 import { formatBytes, formatDate, percentUsed } from '../lib/utils'
 import toast from 'react-hot-toast'
+
+interface Destination { id: number; name: string; protocol: string }
+interface Pkg { id: number; name: string; bandwidth_limit: number | null; speed_limit: number | null; duration_days: number; max_connections: number; enabled: boolean }
 
 interface UserData {
   id: number
@@ -102,6 +106,26 @@ export default function UserDetail() {
   const [editingConfig, setEditingConfig] = useState(false)
   const [configForm, setConfigForm] = useState({ dns: '', allowed_ips: '', endpoint: '', mtu: '', persistent_keepalive: '' })
 
+  // User edit state
+  const [editingUser, setEditingUser] = useState(false)
+  const [destinations, setDestinations] = useState<Destination[]>([])
+  const [packages, setPackages] = useState<Pkg[]>([])
+  const [userForm, setUserForm] = useState({
+    note: '',
+    destination_vpn_id: '',
+    package_id: '',
+    bandwidth_limit_down: '',
+    bandwidth_limit_up: '',
+    bandwidth_unit_down: 'GB' as 'GB' | 'MB',
+    bandwidth_unit_up: 'GB' as 'GB' | 'MB',
+    speed_limit_down: '',
+    speed_limit_up: '',
+    max_connections: '1',
+    expiry_date: '',
+    alert_enabled: true,
+    alert_threshold: '80',
+  })
+
   useEffect(() => { fetchUser() }, [id])
 
   const fetchUser = async () => {
@@ -186,6 +210,97 @@ export default function UserDetail() {
       toast.success('User deleted')
       navigate('/users')
     } catch { toast.error('Failed to delete user') }
+  }
+
+  const startEditUser = async () => {
+    if (!user) return
+    // Load destinations and packages
+    try {
+      const [destRes, pkgRes] = await Promise.all([
+        api.get('/destinations'),
+        api.get('/packages'),
+      ])
+      setDestinations(destRes.data)
+      setPackages(pkgRes.data.filter((p: Pkg) => p.enabled))
+    } catch {}
+
+    // Convert bytes to best unit
+    const toBwUnit = (bytes: number | null): { value: string; unit: 'GB' | 'MB' } => {
+      if (!bytes) return { value: '', unit: 'GB' }
+      if (bytes < 1024 * 1024 * 1024) return { value: String(bytes / (1024 * 1024)), unit: 'MB' }
+      return { value: String(bytes / (1024 * 1024 * 1024)), unit: 'GB' }
+    }
+    const down = toBwUnit(user.bandwidth_limit_down)
+    const up = toBwUnit(user.bandwidth_limit_up)
+
+    setUserForm({
+      note: user.note || '',
+      destination_vpn_id: user.destination_vpn_id ? String(user.destination_vpn_id) : '',
+      package_id: user.package_id ? String(user.package_id) : '',
+      bandwidth_limit_down: down.value,
+      bandwidth_limit_up: up.value,
+      bandwidth_unit_down: down.unit,
+      bandwidth_unit_up: up.unit,
+      speed_limit_down: user.speed_limit_down ? String(user.speed_limit_down / 1000) : '',
+      speed_limit_up: user.speed_limit_up ? String(user.speed_limit_up / 1000) : '',
+      max_connections: String(user.max_connections),
+      expiry_date: user.expiry_date ? new Date(user.expiry_date).toISOString().slice(0, 16) : '',
+      alert_enabled: user.alert_enabled,
+      alert_threshold: String(user.alert_threshold),
+    })
+    setEditingUser(true)
+  }
+
+  const applyPackageToForm = (pkgId: string) => {
+    setUserForm((prev) => ({ ...prev, package_id: pkgId }))
+    const pkg = packages.find((p) => p.id === Number(pkgId))
+    if (!pkg) return
+    const bw = pkg.bandwidth_limit
+    let bwValue = '', bwUnit: 'GB' | 'MB' = 'GB'
+    if (bw) {
+      if (bw < 1024 * 1024 * 1024) { bwValue = String(bw / (1024 * 1024)); bwUnit = 'MB' }
+      else { bwValue = String(bw / (1024 * 1024 * 1024)); bwUnit = 'GB' }
+    }
+    const speedMbps = pkg.speed_limit ? String(pkg.speed_limit / 1000) : ''
+    const expiry = new Date()
+    expiry.setDate(expiry.getDate() + pkg.duration_days)
+    setUserForm((prev) => ({
+      ...prev,
+      bandwidth_limit_down: bwValue, bandwidth_limit_up: bwValue,
+      bandwidth_unit_down: bwUnit, bandwidth_unit_up: bwUnit,
+      speed_limit_down: speedMbps, speed_limit_up: speedMbps,
+      max_connections: String(pkg.max_connections),
+      expiry_date: expiry.toISOString().slice(0, 16),
+    }))
+  }
+
+  const saveUser = async () => {
+    try {
+      const payload: Record<string, unknown> = {
+        note: userForm.note || null,
+        destination_vpn_id: userForm.destination_vpn_id ? Number(userForm.destination_vpn_id) : null,
+        package_id: userForm.package_id ? Number(userForm.package_id) : null,
+        max_connections: Number(userForm.max_connections),
+        alert_enabled: userForm.alert_enabled,
+        alert_threshold: Number(userForm.alert_threshold),
+        expiry_date: userForm.expiry_date ? new Date(userForm.expiry_date).toISOString() : null,
+      }
+      if (userForm.bandwidth_limit_down) {
+        const m = userForm.bandwidth_unit_down === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
+        payload.bandwidth_limit_down = Number(userForm.bandwidth_limit_down) * m
+      } else { payload.bandwidth_limit_down = null }
+      if (userForm.bandwidth_limit_up) {
+        const m = userForm.bandwidth_unit_up === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
+        payload.bandwidth_limit_up = Number(userForm.bandwidth_limit_up) * m
+      } else { payload.bandwidth_limit_up = null }
+      payload.speed_limit_down = userForm.speed_limit_down ? Number(userForm.speed_limit_down) * 1000 : null
+      payload.speed_limit_up = userForm.speed_limit_up ? Number(userForm.speed_limit_up) * 1000 : null
+
+      await api.put(`/users/${id}`, payload)
+      await fetchUser()
+      setEditingUser(false)
+      toast.success('User updated')
+    } catch { toast.error('Failed to update user') }
   }
 
   const copyConfig = () => {
@@ -274,6 +389,9 @@ export default function UserDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <button onClick={startEditUser} className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100">
+            <Pencil className="h-4 w-4" /> Edit
+          </button>
           <button onClick={toggleUser} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${
             user.enabled ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
           }`}>
@@ -287,6 +405,99 @@ export default function UserDetail() {
           </button>
         </div>
       </div>
+
+      {/* Edit User Panel */}
+      {editingUser && (
+        <div className="rounded-xl bg-white p-6 shadow-sm border border-blue-200 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">Edit User</h3>
+            <button onClick={() => setEditingUser(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Destination VPN</label>
+              <select value={userForm.destination_vpn_id} onChange={(e) => setUserForm({ ...userForm, destination_vpn_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="">-- None --</option>
+                {destinations.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.protocol})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
+              <select value={userForm.package_id} onChange={(e) => { if (e.target.value) applyPackageToForm(e.target.value); else setUserForm({ ...userForm, package_id: '' }) }}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="">-- Custom --</option>
+                {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Download Limit</label>
+              <div className="flex gap-2">
+                <input type="number" value={userForm.bandwidth_limit_down} onChange={(e) => setUserForm({ ...userForm, bandwidth_limit_down: e.target.value })}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" min="0" step="any" />
+                <select value={userForm.bandwidth_unit_down} onChange={(e) => setUserForm({ ...userForm, bandwidth_unit_down: e.target.value as 'GB' | 'MB' })}
+                  className="w-20 rounded-lg border border-gray-300 px-2 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="GB">GB</option><option value="MB">MB</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Upload Limit</label>
+              <div className="flex gap-2">
+                <input type="number" value={userForm.bandwidth_limit_up} onChange={(e) => setUserForm({ ...userForm, bandwidth_limit_up: e.target.value })}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" min="0" step="any" />
+                <select value={userForm.bandwidth_unit_up} onChange={(e) => setUserForm({ ...userForm, bandwidth_unit_up: e.target.value as 'GB' | 'MB' })}
+                  className="w-20 rounded-lg border border-gray-300 px-2 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="GB">GB</option><option value="MB">MB</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Download Speed (Mbps)</label>
+              <input type="number" value={userForm.speed_limit_down} onChange={(e) => setUserForm({ ...userForm, speed_limit_down: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" min="0" step="any" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Upload Speed (Mbps)</label>
+              <input type="number" value={userForm.speed_limit_up} onChange={(e) => setUserForm({ ...userForm, speed_limit_up: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" min="0" step="any" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max Connections</label>
+              <input type="number" value={userForm.max_connections} onChange={(e) => setUserForm({ ...userForm, max_connections: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" min="1" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+              <input type="datetime-local" value={userForm.expiry_date} onChange={(e) => setUserForm({ ...userForm, expiry_date: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+              <input type="text" value={userForm.note} onChange={(e) => setUserForm({ ...userForm, note: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <div className="flex items-end gap-4">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="edit_alert" checked={userForm.alert_enabled} onChange={(e) => setUserForm({ ...userForm, alert_enabled: e.target.checked })}
+                  className="rounded border-gray-300" />
+                <label htmlFor="edit_alert" className="text-sm text-gray-700">Alert</label>
+              </div>
+              {userForm.alert_enabled && (
+                <div className="flex-1">
+                  <input type="number" value={userForm.alert_threshold} onChange={(e) => setUserForm({ ...userForm, alert_threshold: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    min="1" max="100" placeholder="Threshold %" />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={saveUser} className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700">Save Changes</button>
+            <button onClick={() => setEditingUser(false)} className="rounded-lg border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-gray-200">

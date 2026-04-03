@@ -22,6 +22,8 @@ interface Pkg {
   price: number | null
   currency: string
   enabled: boolean
+  destination_vpn_id: number | null
+  destination_vpn_name: string | null
 }
 
 export default function UserNew() {
@@ -89,6 +91,7 @@ export default function UserNew() {
       speed_limit_up: speedMbps,
       max_connections: String(pkg.max_connections),
       expiry_date: expiryStr,
+      destination_vpn_id: pkg.destination_vpn_id ? String(pkg.destination_vpn_id) : prev.destination_vpn_id,
     }))
 
     toast.success(`Package "${pkg.name}" applied`)

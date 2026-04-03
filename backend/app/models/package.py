@@ -1,5 +1,5 @@
-from sqlalchemy import String, Text, Integer, BigInteger, Boolean, Numeric
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Text, Integer, BigInteger, Boolean, Numeric, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -17,3 +17,5 @@ class Package(Base):
     price: Mapped[float | None] = mapped_column(Numeric(10, 2))
     currency: Mapped[str] = mapped_column(String(10), default="IRR")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    destination_vpn_id: Mapped[int | None] = mapped_column(ForeignKey("destination_vpns.id", ondelete="SET NULL"))
+    destination_vpn: Mapped["DestinationVPN | None"] = relationship("DestinationVPN")

@@ -11,6 +11,7 @@ class PackageCreate(BaseModel):
     price: float | None = None
     currency: str = "IRR"
     enabled: bool = True
+    destination_vpn_id: int | None = None
 
 
 class PackageUpdate(BaseModel):
@@ -23,6 +24,7 @@ class PackageUpdate(BaseModel):
     price: float | None = None
     currency: str | None = None
     enabled: bool | None = None
+    destination_vpn_id: int | None = None
 
 
 class PackageResponse(BaseModel):
@@ -36,5 +38,7 @@ class PackageResponse(BaseModel):
     price: float | None
     currency: str
     enabled: bool
+    destination_vpn_id: int | None = None
+    destination_vpn_name: str | None = None
 
     model_config = {"from_attributes": True}

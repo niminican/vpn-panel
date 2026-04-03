@@ -15,10 +15,19 @@ interface Pkg {
   price: number | null
   currency: string
   enabled: boolean
+  destination_vpn_id: number | null
+  destination_vpn_name: string | null
+}
+
+interface Destination {
+  id: number
+  name: string
+  protocol: string
 }
 
 export default function Packages() {
   const [packages, setPackages] = useState<Pkg[]>([])
+  const [destinations, setDestinations] = useState<Destination[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState({
@@ -32,6 +41,7 @@ export default function Packages() {
     price: '',
     currency: 'IRR',
     enabled: true,
+    destination_vpn_id: '',
   })
 
   const fetchPackages = async () => {
@@ -41,6 +51,7 @@ export default function Packages() {
 
   useEffect(() => {
     fetchPackages()
+    api.get('/destinations').then((res) => setDestinations(res.data))
   }, [])
 
   const handleSubmit = async (e: FormEvent) => {
@@ -52,6 +63,7 @@ export default function Packages() {
       max_connections: Number(form.max_connections),
       currency: form.currency,
       enabled: form.enabled,
+      destination_vpn_id: form.destination_vpn_id ? Number(form.destination_vpn_id) : null,
     }
     if (form.bandwidth_limit_value) {
       const multiplier = form.bandwidth_unit === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
@@ -79,11 +91,10 @@ export default function Packages() {
 
   const resetForm = () => setForm({
     name: '', description: '', bandwidth_limit_value: '', bandwidth_unit: 'GB', speed_limit_mbps: '',
-    duration_days: '30', max_connections: '1', price: '', currency: 'IRR', enabled: true,
+    duration_days: '30', max_connections: '1', price: '', currency: 'IRR', enabled: true, destination_vpn_id: '',
   })
 
   const editPkg = (pkg: Pkg) => {
-    // Determine best unit for display: if < 1 GB, show as MB
     const isSmall = pkg.bandwidth_limit && pkg.bandwidth_limit < 1024 * 1024 * 1024
     const bwUnit = isSmall ? 'MB' : 'GB'
     const bwDivisor = isSmall ? 1024 * 1024 : 1024 * 1024 * 1024
@@ -98,6 +109,7 @@ export default function Packages() {
       price: pkg.price ? String(pkg.price) : '',
       currency: pkg.currency,
       enabled: pkg.enabled,
+      destination_vpn_id: pkg.destination_vpn_id ? String(pkg.destination_vpn_id) : '',
     })
     setEditId(pkg.id)
     setShowForm(true)
@@ -135,6 +147,14 @@ export default function Packages() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Destination VPN</label>
+              <select value={form.destination_vpn_id} onChange={(e) => setForm({ ...form, destination_vpn_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="">-- None --</option>
+                {destinations.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.protocol})</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Bandwidth</label>
@@ -211,6 +231,12 @@ export default function Packages() {
             </div>
             {pkg.description && <p className="text-sm text-gray-500 mb-3">{pkg.description}</p>}
             <div className="space-y-1 text-sm">
+              {pkg.destination_vpn_name && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Destination</span>
+                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{pkg.destination_vpn_name}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-400">Traffic</span>
                 <span>{pkg.bandwidth_limit ? formatBytes(pkg.bandwidth_limit) : 'Unlimited'}</span>
