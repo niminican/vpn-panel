@@ -1,6 +1,8 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Package as PackageIcon } from 'lucide-react'
 import api from '../api/client'
+import { formatBytes } from '../lib/utils'
 import toast from 'react-hot-toast'
 
 interface Destination {
@@ -9,9 +11,24 @@ interface Destination {
   protocol: string
 }
 
+interface Pkg {
+  id: number
+  name: string
+  description: string | null
+  bandwidth_limit: number | null
+  speed_limit: number | null
+  duration_days: number
+  max_connections: number
+  price: number | null
+  currency: string
+  enabled: boolean
+}
+
 export default function UserNew() {
   const navigate = useNavigate()
   const [destinations, setDestinations] = useState<Destination[]>([])
+  const [packages, setPackages] = useState<Pkg[]>([])
+  const [selectedPkg, setSelectedPkg] = useState<number | null>(null)
   const [form, setForm] = useState({
     username: '',
     note: '',
@@ -30,7 +47,52 @@ export default function UserNew() {
 
   useEffect(() => {
     api.get('/destinations').then((res) => setDestinations(res.data))
+    api.get('/packages').then((res) => setPackages(res.data.filter((p: Pkg) => p.enabled)))
   }, [])
+
+  const applyPackage = (pkgId: number | null) => {
+    setSelectedPkg(pkgId)
+    if (!pkgId) return
+
+    const pkg = packages.find((p) => p.id === pkgId)
+    if (!pkg) return
+
+    // Determine best unit for bandwidth
+    const bwBytes = pkg.bandwidth_limit
+    let bwValue = ''
+    let bwUnit: 'GB' | 'MB' = 'GB'
+    if (bwBytes) {
+      if (bwBytes < 1024 * 1024 * 1024) {
+        bwValue = String(bwBytes / (1024 * 1024))
+        bwUnit = 'MB'
+      } else {
+        bwValue = String(bwBytes / (1024 * 1024 * 1024))
+        bwUnit = 'GB'
+      }
+    }
+
+    // Convert speed from Kbps to Mbps
+    const speedMbps = pkg.speed_limit ? String(pkg.speed_limit / 1000) : ''
+
+    // Calculate expiry date from duration_days
+    const expiry = new Date()
+    expiry.setDate(expiry.getDate() + pkg.duration_days)
+    const expiryStr = expiry.toISOString().slice(0, 16) // format for datetime-local
+
+    setForm((prev) => ({
+      ...prev,
+      bandwidth_limit_down: bwValue,
+      bandwidth_limit_up: bwValue,
+      bandwidth_unit_down: bwUnit,
+      bandwidth_unit_up: bwUnit,
+      speed_limit_down: speedMbps,
+      speed_limit_up: speedMbps,
+      max_connections: String(pkg.max_connections),
+      expiry_date: expiryStr,
+    }))
+
+    toast.success(`Package "${pkg.name}" applied`)
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -39,6 +101,7 @@ export default function UserNew() {
         username: form.username,
         note: form.note || null,
         destination_vpn_id: form.destination_vpn_id ? Number(form.destination_vpn_id) : null,
+        package_id: selectedPkg || null,
         max_connections: Number(form.max_connections),
         alert_enabled: form.alert_enabled,
         alert_threshold: Number(form.alert_threshold),
@@ -108,6 +171,52 @@ export default function UserNew() {
             ))}
           </select>
         </div>
+
+        {/* Package Selection */}
+        {packages.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Apply Package</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {packages.map((pkg) => (
+                <button
+                  key={pkg.id}
+                  type="button"
+                  onClick={() => applyPackage(pkg.id)}
+                  className={`relative rounded-lg border-2 p-3 text-left text-sm transition-all hover:shadow-md ${
+                    selectedPkg === pkg.id
+                      ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <PackageIcon className={`h-4 w-4 ${selectedPkg === pkg.id ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <span className="font-medium text-gray-900">{pkg.name}</span>
+                  </div>
+                  <div className="space-y-0.5 text-xs text-gray-500">
+                    <div>Traffic: {pkg.bandwidth_limit ? formatBytes(pkg.bandwidth_limit) : 'Unlimited'}</div>
+                    <div>Speed: {pkg.speed_limit ? `${pkg.speed_limit / 1000} Mbps` : 'Unlimited'}</div>
+                    <div>{pkg.duration_days} days &middot; {pkg.max_connections} conn</div>
+                    {pkg.price && (
+                      <div className="font-medium text-gray-700">{pkg.price.toLocaleString()} {pkg.currency}</div>
+                    )}
+                  </div>
+                  {selectedPkg === pkg.id && (
+                    <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-blue-500" />
+                  )}
+                </button>
+              ))}
+            </div>
+            {selectedPkg && (
+              <button
+                type="button"
+                onClick={() => setSelectedPkg(null)}
+                className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+              >
+                Clear package selection (keep current values)
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>

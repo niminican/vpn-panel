@@ -38,6 +38,10 @@ def _user_to_response(user: User, peers_status: list[dict] | None = None) -> Use
     if user.destination_vpn:
         dest_name = user.destination_vpn.name
 
+    pkg_name = None
+    if user.package:
+        pkg_name = user.package.name
+
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -45,6 +49,8 @@ def _user_to_response(user: User, peers_status: list[dict] | None = None) -> Use
         enabled=user.enabled,
         destination_vpn_id=user.destination_vpn_id,
         destination_vpn_name=dest_name,
+        package_id=user.package_id,
+        package_name=pkg_name,
         assigned_ip=user.assigned_ip,
         bandwidth_limit_up=user.bandwidth_limit_up,
         bandwidth_limit_down=user.bandwidth_limit_down,
@@ -108,6 +114,7 @@ def create_user(
         username=req.username,
         note=req.note,
         destination_vpn_id=req.destination_vpn_id,
+        package_id=req.package_id,
         wg_private_key=encrypt_key(private_key),
         wg_public_key=public_key,
         wg_preshared_key=encrypt_key(preshared_key),

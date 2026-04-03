@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
         return v
     note: str | None = None
     destination_vpn_id: int | None = None
+    package_id: int | None = None
     bandwidth_limit_up: int | None = None  # bytes
     bandwidth_limit_down: int | None = None
     speed_limit_up: int | None = None  # kbps
@@ -31,6 +32,7 @@ class UserUpdate(BaseModel):
     note: str | None = None
     enabled: bool | None = None
     destination_vpn_id: int | None = None
+    package_id: int | None = None
     bandwidth_limit_up: int | None = None
     bandwidth_limit_down: int | None = None
     speed_limit_up: int | None = None
@@ -48,6 +50,8 @@ class UserResponse(BaseModel):
     enabled: bool
     destination_vpn_id: int | None
     destination_vpn_name: str | None = None
+    package_id: int | None = None
+    package_name: str | None = None
     assigned_ip: str
     bandwidth_limit_up: int | None
     bandwidth_limit_down: int | None

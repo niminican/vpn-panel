@@ -14,6 +14,10 @@ class User(Base):
     note: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Package assignment
+    package_id: Mapped[int | None] = mapped_column(ForeignKey("packages.id", ondelete="SET NULL"))
+    package: Mapped["Package | None"] = relationship("Package")
+
     # Destination VPN assignment
     destination_vpn_id: Mapped[int | None] = mapped_column(ForeignKey("destination_vpns.id", ondelete="SET NULL"))
     destination_vpn: Mapped["DestinationVPN | None"] = relationship("DestinationVPN", back_populates="users")

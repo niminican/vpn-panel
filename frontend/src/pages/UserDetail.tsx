@@ -24,6 +24,8 @@ interface UserData {
   enabled: boolean
   destination_vpn_id: number | null
   destination_vpn_name: string | null
+  package_id: number | null
+  package_name: string | null
   assigned_ip: string
   bandwidth_limit_up: number | null
   bandwidth_limit_down: number | null
@@ -337,6 +339,7 @@ export default function UserDetail() {
           <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
             <h3 className="text-sm font-medium text-gray-500 mb-4">Details</h3>
             <dl className="space-y-2 text-sm">
+              <div className="flex justify-between"><dt className="text-gray-500">Package</dt><dd className="font-medium">{user.package_name ? <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">{user.package_name}</span> : <span className="text-gray-400">Custom</span>}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Destination VPN</dt><dd className="font-medium">{user.destination_vpn_name || 'None'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Speed (Down/Up)</dt><dd className="font-medium">{user.speed_limit_down ? `${user.speed_limit_down / 1000} Mbps` : 'Unlimited'} / {user.speed_limit_up ? `${user.speed_limit_up / 1000} Mbps` : 'Unlimited'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Max Connections</dt><dd className="font-medium">{user.max_connections}</dd></div>
