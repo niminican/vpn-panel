@@ -1,9 +1,19 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class UserCreate(BaseModel):
     username: str
+
+    @field_validator("username")
+    @classmethod
+    def username_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Username cannot be empty")
+        if len(v) < 2:
+            raise ValueError("Username must be at least 2 characters")
+        return v
     note: str | None = None
     destination_vpn_id: int | None = None
     bandwidth_limit_up: int | None = None  # bytes
