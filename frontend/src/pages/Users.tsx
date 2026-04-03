@@ -97,7 +97,7 @@ export default function Users() {
         />
       </div>
 
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
@@ -125,7 +125,7 @@ export default function Users() {
                 </td>
               </tr>
             ) : (
-              users.map((user) => (
+              users.map((user, idx) => (
                 <tr
                   key={user.id}
                   className="border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
@@ -172,7 +172,7 @@ export default function Users() {
                         <MoreVertical className="h-4 w-4 text-gray-400" />
                       </button>
                       {menuOpen === user.id && (
-                        <div className="absolute right-0 z-10 mt-1 w-44 rounded-lg bg-white shadow-lg border py-1">
+                        <div className={`absolute right-0 z-20 w-44 rounded-lg bg-white shadow-lg border py-1 ${idx >= users.length - 2 ? 'bottom-full mb-1' : 'mt-1'}`}>
                           <button
                             onClick={() => navigate(`/users/${user.id}`)}
                             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50"
