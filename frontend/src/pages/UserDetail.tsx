@@ -338,7 +338,7 @@ export default function UserDetail() {
             <h3 className="text-sm font-medium text-gray-500 mb-4">Details</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-gray-500">Destination VPN</dt><dd className="font-medium">{user.destination_vpn_name || 'None'}</dd></div>
-              <div className="flex justify-between"><dt className="text-gray-500">Speed (Down/Up)</dt><dd className="font-medium">{user.speed_limit_down ? `${user.speed_limit_down} Kbps` : 'Unlimited'} / {user.speed_limit_up ? `${user.speed_limit_up} Kbps` : 'Unlimited'}</dd></div>
+              <div className="flex justify-between"><dt className="text-gray-500">Speed (Down/Up)</dt><dd className="font-medium">{user.speed_limit_down ? `${user.speed_limit_down / 1000} Mbps` : 'Unlimited'} / {user.speed_limit_up ? `${user.speed_limit_up / 1000} Mbps` : 'Unlimited'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Max Connections</dt><dd className="font-medium">{user.max_connections}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Expiry</dt><dd className="font-medium">{formatDate(user.expiry_date)}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Alert</dt><dd className="font-medium">{user.alert_enabled ? `${user.alert_threshold}%` : 'Disabled'}</dd></div>

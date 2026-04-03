@@ -24,8 +24,9 @@ export default function Packages() {
   const [form, setForm] = useState({
     name: '',
     description: '',
-    bandwidth_limit_gb: '',
-    speed_limit: '',
+    bandwidth_limit_value: '',
+    bandwidth_unit: 'GB' as 'GB' | 'MB',
+    speed_limit_mbps: '',
     duration_days: '30',
     max_connections: '1',
     price: '',
@@ -52,8 +53,11 @@ export default function Packages() {
       currency: form.currency,
       enabled: form.enabled,
     }
-    if (form.bandwidth_limit_gb) payload.bandwidth_limit = Number(form.bandwidth_limit_gb) * 1024 * 1024 * 1024
-    if (form.speed_limit) payload.speed_limit = Number(form.speed_limit)
+    if (form.bandwidth_limit_value) {
+      const multiplier = form.bandwidth_unit === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
+      payload.bandwidth_limit = Number(form.bandwidth_limit_value) * multiplier
+    }
+    if (form.speed_limit_mbps) payload.speed_limit = Number(form.speed_limit_mbps) * 1000
     if (form.price) payload.price = Number(form.price)
 
     try {
@@ -74,16 +78,21 @@ export default function Packages() {
   }
 
   const resetForm = () => setForm({
-    name: '', description: '', bandwidth_limit_gb: '', speed_limit: '',
+    name: '', description: '', bandwidth_limit_value: '', bandwidth_unit: 'GB', speed_limit_mbps: '',
     duration_days: '30', max_connections: '1', price: '', currency: 'IRR', enabled: true,
   })
 
   const editPkg = (pkg: Pkg) => {
+    // Determine best unit for display: if < 1 GB, show as MB
+    const isSmall = pkg.bandwidth_limit && pkg.bandwidth_limit < 1024 * 1024 * 1024
+    const bwUnit = isSmall ? 'MB' : 'GB'
+    const bwDivisor = isSmall ? 1024 * 1024 : 1024 * 1024 * 1024
     setForm({
       name: pkg.name,
       description: pkg.description || '',
-      bandwidth_limit_gb: pkg.bandwidth_limit ? String(pkg.bandwidth_limit / (1024 * 1024 * 1024)) : '',
-      speed_limit: pkg.speed_limit ? String(pkg.speed_limit) : '',
+      bandwidth_limit_value: pkg.bandwidth_limit ? String(pkg.bandwidth_limit / bwDivisor) : '',
+      bandwidth_unit: bwUnit as 'GB' | 'MB',
+      speed_limit_mbps: pkg.speed_limit ? String(pkg.speed_limit / 1000) : '',
       duration_days: String(pkg.duration_days),
       max_connections: String(pkg.max_connections),
       price: pkg.price ? String(pkg.price) : '',
@@ -128,14 +137,21 @@ export default function Packages() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Bandwidth (GB)</label>
-              <input type="number" value={form.bandwidth_limit_gb} onChange={(e) => setForm({ ...form, bandwidth_limit_gb: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bandwidth</label>
+              <div className="flex gap-2">
+                <input type="number" value={form.bandwidth_limit_value} onChange={(e) => setForm({ ...form, bandwidth_limit_value: e.target.value })}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" step="any" />
+                <select value={form.bandwidth_unit} onChange={(e) => setForm({ ...form, bandwidth_unit: e.target.value as 'GB' | 'MB' })}
+                  className="w-20 rounded-lg border border-gray-300 px-2 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="GB">GB</option>
+                  <option value="MB">MB</option>
+                </select>
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Speed (Kbps)</label>
-              <input type="number" value={form.speed_limit} onChange={(e) => setForm({ ...form, speed_limit: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Speed (Mbps)</label>
+              <input type="number" value={form.speed_limit_mbps} onChange={(e) => setForm({ ...form, speed_limit_mbps: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Unlimited" step="any" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Duration (days) *</label>
@@ -159,6 +175,7 @@ export default function Packages() {
                 <option value="IRR">IRR (Rial)</option>
                 <option value="USD">USD</option>
                 <option value="EUR">EUR</option>
+                <option value="CAD">CAD</option>
               </select>
             </div>
           </div>
@@ -200,7 +217,7 @@ export default function Packages() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Speed</span>
-                <span>{pkg.speed_limit ? `${pkg.speed_limit} Kbps` : 'Unlimited'}</span>
+                <span>{pkg.speed_limit ? `${pkg.speed_limit / 1000} Mbps` : 'Unlimited'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Duration</span>

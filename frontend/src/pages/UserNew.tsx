@@ -18,6 +18,8 @@ export default function UserNew() {
     destination_vpn_id: '',
     bandwidth_limit_down: '',
     bandwidth_limit_up: '',
+    bandwidth_unit_down: 'GB' as 'GB' | 'MB',
+    bandwidth_unit_up: 'GB' as 'GB' | 'MB',
     speed_limit_down: '',
     speed_limit_up: '',
     max_connections: '1',
@@ -41,11 +43,18 @@ export default function UserNew() {
         alert_enabled: form.alert_enabled,
         alert_threshold: Number(form.alert_threshold),
       }
-      // Convert GB to bytes for bandwidth limits
-      if (form.bandwidth_limit_down) payload.bandwidth_limit_down = Number(form.bandwidth_limit_down) * 1024 * 1024 * 1024
-      if (form.bandwidth_limit_up) payload.bandwidth_limit_up = Number(form.bandwidth_limit_up) * 1024 * 1024 * 1024
-      if (form.speed_limit_down) payload.speed_limit_down = Number(form.speed_limit_down)
-      if (form.speed_limit_up) payload.speed_limit_up = Number(form.speed_limit_up)
+      // Convert GB/MB to bytes for bandwidth limits
+      if (form.bandwidth_limit_down) {
+        const multiplier = form.bandwidth_unit_down === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
+        payload.bandwidth_limit_down = Number(form.bandwidth_limit_down) * multiplier
+      }
+      if (form.bandwidth_limit_up) {
+        const multiplier = form.bandwidth_unit_up === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024
+        payload.bandwidth_limit_up = Number(form.bandwidth_limit_up) * multiplier
+      }
+      // Convert Mbps to Kbps for speed limits
+      if (form.speed_limit_down) payload.speed_limit_down = Number(form.speed_limit_down) * 1000
+      if (form.speed_limit_up) payload.speed_limit_up = Number(form.speed_limit_up) * 1000
       if (form.expiry_date) payload.expiry_date = new Date(form.expiry_date).toISOString()
 
       const res = await api.post('/users', payload)
@@ -102,32 +111,54 @@ export default function UserNew() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Download Limit (GB)</label>
-            <input
-              type="number"
-              value={form.bandwidth_limit_down}
-              onChange={(e) => update('bandwidth_limit_down', e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="Unlimited"
-              min="0"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Download Limit</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={form.bandwidth_limit_down}
+                onChange={(e) => update('bandwidth_limit_down', e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Unlimited"
+                min="0"
+                step="any"
+              />
+              <select
+                value={form.bandwidth_unit_down}
+                onChange={(e) => update('bandwidth_unit_down', e.target.value)}
+                className="w-20 rounded-lg border border-gray-300 px-2 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="GB">GB</option>
+                <option value="MB">MB</option>
+              </select>
+            </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Limit (GB)</label>
-            <input
-              type="number"
-              value={form.bandwidth_limit_up}
-              onChange={(e) => update('bandwidth_limit_up', e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="Unlimited"
-              min="0"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Limit</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={form.bandwidth_limit_up}
+                onChange={(e) => update('bandwidth_limit_up', e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Unlimited"
+                min="0"
+                step="any"
+              />
+              <select
+                value={form.bandwidth_unit_up}
+                onChange={(e) => update('bandwidth_unit_up', e.target.value)}
+                className="w-20 rounded-lg border border-gray-300 px-2 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="GB">GB</option>
+                <option value="MB">MB</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Download Speed (Kbps)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Download Speed (Mbps)</label>
             <input
               type="number"
               value={form.speed_limit_down}
@@ -135,10 +166,11 @@ export default function UserNew() {
               className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="Unlimited"
               min="0"
+              step="any"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Speed (Kbps)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Speed (Mbps)</label>
             <input
               type="number"
               value={form.speed_limit_up}
@@ -146,6 +178,7 @@ export default function UserNew() {
               className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="Unlimited"
               min="0"
+              step="any"
             />
           </div>
         </div>
