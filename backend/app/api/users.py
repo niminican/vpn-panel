@@ -1,18 +1,21 @@
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
 from app.models.user import User
 from app.models.admin import Admin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserConfigResponse, UserListResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserConfigResponse, UserConfigUpdate, UserListResponse
 from app.core.security import encrypt_key
 from app.core.exceptions import NotFoundError, ConflictError
 from app.services import wireguard
 from app.services.qr_generator import generate_qr_base64
+from app.services.audit_logger import log_action
+from app.models.user_session import UserSession
+from app.schemas.session import UserSessionResponse, SessionListResponse
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -69,7 +72,7 @@ def list_users(
     search: str = Query("", max_length=100),
     enabled: bool | None = None,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.view")),
 ):
     query = db.query(User)
     if search:
@@ -90,8 +93,9 @@ def list_users(
 @router.post("", response_model=UserResponse, status_code=201)
 def create_user(
     req: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.create")),
 ):
     if db.query(User).filter(User.username == req.username).first():
         raise ConflictError("Username already exists")
@@ -119,6 +123,9 @@ def create_user(
         telegram_link_code=secrets.token_urlsafe(12),
     )
     db.add(user)
+    log_action(db, _admin, "create_user", "user", details=f"Created user {req.username}",
+               ip_address=request.client.host if request.client else None,
+               user_agent=request.headers.get("user-agent"))
     db.commit()
     db.refresh(user)
 
@@ -135,7 +142,7 @@ def create_user(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.view")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -150,7 +157,7 @@ def update_user(
     user_id: int,
     req: UserUpdate,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -173,8 +180,9 @@ def update_user(
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.delete")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -185,6 +193,10 @@ def delete_user(
     except RuntimeError:
         pass
 
+    log_action(db, _admin, "delete_user", "user", resource_id=user_id,
+               details=f"Deleted user {user.username}",
+               ip_address=request.client.host if request.client else None,
+               user_agent=request.headers.get("user-agent"))
     db.delete(user)
     db.commit()
 
@@ -192,14 +204,19 @@ def delete_user(
 @router.post("/{user_id}/toggle", response_model=UserResponse)
 def toggle_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise NotFoundError("User")
 
     user.enabled = not user.enabled
+    log_action(db, _admin, "toggle_user", "user", resource_id=user_id,
+               details=f"{'Enabled' if user.enabled else 'Disabled'} user {user.username}",
+               ip_address=request.client.host if request.client else None,
+               user_agent=request.headers.get("user-agent"))
     if user.enabled:
         try:
             wireguard.add_peer(user)
@@ -220,7 +237,7 @@ def toggle_user(
 def reset_bandwidth(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -238,16 +255,95 @@ def reset_bandwidth(
 def get_user_config(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.view")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise NotFoundError("User")
 
+    from app.config import settings as app_settings
     config_text = wireguard.generate_client_config(user)
     qr_base64 = generate_qr_base64(config_text)
 
     return UserConfigResponse(
         config_text=config_text,
         qr_code_base64=qr_base64,
+        dns=user.config_dns or app_settings.wg_dns,
+        allowed_ips=user.config_allowed_ips or "0.0.0.0/0, ::/0",
+        endpoint=user.config_endpoint or f"{app_settings.wg_server_ip}:{app_settings.wg_port}",
+        mtu=user.config_mtu,
+        persistent_keepalive=user.config_keepalive if user.config_keepalive is not None else 25,
     )
+
+
+@router.get("/{user_id}/sessions", response_model=SessionListResponse)
+def list_user_sessions(
+    user_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _admin: Admin = Depends(require_permission("users.view")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundError("User")
+
+    query = db.query(UserSession).filter(UserSession.user_id == user_id)
+    total = query.count()
+    sessions = query.order_by(UserSession.connected_at.desc()).offset(skip).limit(limit).all()
+
+    result = []
+    for s in sessions:
+        duration = None
+        if s.disconnected_at and s.connected_at:
+            duration = int((s.disconnected_at - s.connected_at).total_seconds())
+        result.append(UserSessionResponse(
+            id=s.id,
+            user_id=s.user_id,
+            endpoint=s.endpoint,
+            client_ip=s.client_ip,
+            connected_at=s.connected_at,
+            disconnected_at=s.disconnected_at,
+            bytes_sent=s.bytes_sent,
+            bytes_received=s.bytes_received,
+            duration_seconds=duration,
+        ))
+
+    return SessionListResponse(sessions=result, total=total)
+
+
+@router.put("/{user_id}/config", response_model=UserConfigResponse)
+def update_user_config(
+    user_id: int,
+    req: UserConfigUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin: Admin = Depends(require_permission("users.edit")),
+):
+    """Update a user's WireGuard config (DNS, AllowedIPs, etc.)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundError("User")
+
+    # Update allowed fields
+    if req.dns is not None:
+        user.config_dns = req.dns
+    if req.allowed_ips is not None:
+        user.config_allowed_ips = req.allowed_ips
+    if req.endpoint is not None:
+        user.config_endpoint = req.endpoint
+    if req.mtu is not None:
+        user.config_mtu = req.mtu
+    if req.persistent_keepalive is not None:
+        user.config_keepalive = req.persistent_keepalive
+
+    log_action(db, _admin, "update_config", "user", resource_id=user_id,
+               details=f"Updated config for user {user.username}",
+               ip_address=request.client.host if request.client else None,
+               user_agent=request.headers.get("user-agent"))
+    db.commit()
+    db.refresh(user)
+
+    config_text = wireguard.generate_client_config(user)
+    qr_base64 = generate_qr_base64(config_text)
+    return UserConfigResponse(config_text=config_text, qr_code_base64=qr_base64)

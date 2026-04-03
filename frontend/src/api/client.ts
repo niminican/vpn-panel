@@ -1,4 +1,5 @@
 import axios from 'axios'
+import toast from 'react-hot-toast'
 
 const api = axios.create({
   baseURL: '/api',
@@ -15,7 +16,23 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+
+    // Handle rate limiting
+    if (status === 429) {
+      const detail = error.response?.data?.detail || 'Too many requests. Please wait.'
+      toast.error(detail)
+      return Promise.reject(error)
+    }
+
+    // Handle permission denied
+    if (status === 403) {
+      toast.error('Permission denied')
+      return Promise.reject(error)
+    }
+
+    // Handle auth errors
+    if (status === 401 && !error.config.url?.includes('/auth/login')) {
       const refreshToken = localStorage.getItem('refresh_token')
       if (refreshToken && !error.config._retry) {
         error.config._retry = true

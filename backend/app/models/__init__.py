@@ -1,6 +1,8 @@
 from app.models.admin import Admin
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.destination_vpn import DestinationVPN
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.models.whitelist import UserWhitelist
 from app.models.schedule import UserSchedule
 from app.models.connection_log import ConnectionLog
@@ -12,8 +14,10 @@ from app.models.alert import Alert
 
 __all__ = [
     "Admin",
+    "AdminAuditLog",
     "DestinationVPN",
     "User",
+    "UserSession",
     "UserWhitelist",
     "UserSchedule",
     "ConnectionLog",

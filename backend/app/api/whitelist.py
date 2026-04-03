@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
 from app.models.admin import Admin
 from app.models.user import User
 from app.models.whitelist import UserWhitelist
@@ -36,7 +36,7 @@ def _sync_whitelist_rules(user: User, db: Session):
 def list_whitelist(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -49,7 +49,7 @@ def add_whitelist_entry(
     user_id: int,
     req: WhitelistCreate,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -75,7 +75,7 @@ def delete_whitelist_entry(
     user_id: int,
     entry_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

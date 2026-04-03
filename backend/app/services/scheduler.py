@@ -35,6 +35,7 @@ def start_scheduler():
     )
     from app.services.destination_vpn import check_all_destinations
     from app.services.connection_logger import flush as flush_logs
+    from app.services.session_tracker import track_sessions
 
     # Bandwidth polling
     scheduler.add_job(poll_bandwidth, "interval", seconds=60, id="poll_bandwidth")
@@ -54,8 +55,15 @@ def start_scheduler():
     # Destination VPN health
     scheduler.add_job(check_all_destinations, "interval", seconds=60, id="dest_health")
 
+    # Session tracking
+    scheduler.add_job(track_sessions, "interval", seconds=60, id="track_sessions")
+
     # Connection log flush
     scheduler.add_job(flush_logs, "interval", seconds=5, id="flush_conn_logs")
+
+    # Database cleanup (daily at 3:00 AM)
+    from app.services.db_cleanup import cleanup_old_records
+    scheduler.add_job(cleanup_old_records, "cron", hour=3, minute=0, id="db_cleanup")
 
     scheduler.start()
     logger.info("Scheduler started with all jobs")

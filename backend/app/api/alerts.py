@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
 from app.models.admin import Admin
 from app.models.alert import Alert
 from app.schemas.setting import AlertResponse
@@ -17,7 +17,7 @@ def list_alerts(
     limit: int = Query(50, ge=1, le=200),
     unread_only: bool = False,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("alerts.view")),
 ):
     query = db.query(Alert)
     if unread_only:
@@ -29,7 +29,7 @@ def list_alerts(
 def acknowledge_alert(
     alert_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("alerts.view")),
 ):
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
@@ -42,7 +42,7 @@ def acknowledge_alert(
 @router.post("/acknowledge-all")
 def acknowledge_all_alerts(
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("alerts.view")),
 ):
     db.query(Alert).filter(Alert.acknowledged == False).update(  # noqa: E712
         {"acknowledged": True}

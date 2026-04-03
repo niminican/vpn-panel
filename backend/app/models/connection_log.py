@@ -16,6 +16,7 @@ class ConnectionLog(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     source_ip: Mapped[str] = mapped_column(String(45), nullable=False)
     dest_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    dest_hostname: Mapped[str | None] = mapped_column(String(255))
     dest_port: Mapped[int | None] = mapped_column(Integer)
     protocol: Mapped[str | None] = mapped_column(String(10))  # tcp/udp/icmp
     bytes_sent: Mapped[int] = mapped_column(BigInteger, default=0)

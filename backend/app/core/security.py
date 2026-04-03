@@ -38,8 +38,35 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
+_fernet_instance: Fernet | None = None
+
+
 def get_fernet() -> Fernet:
-    return Fernet(settings.encryption_key.encode() if len(settings.encryption_key) == 44 else Fernet.generate_key())
+    global _fernet_instance
+    if _fernet_instance is not None:
+        return _fernet_instance
+
+    key = settings.encryption_key
+    if key == "change-this-to-a-fernet-key":
+        # Auto-generate and warn (first run only)
+        import logging
+        logger = logging.getLogger(__name__)
+        generated = Fernet.generate_key()
+        logger.critical(
+            "SECURITY: Using auto-generated encryption key! "
+            "Set ENCRYPTION_KEY in .env to: %s",
+            generated.decode(),
+        )
+        _fernet_instance = Fernet(generated)
+    else:
+        try:
+            _fernet_instance = Fernet(key.encode())
+        except Exception:
+            raise ValueError(
+                "Invalid ENCRYPTION_KEY. Must be a valid Fernet key (base64, 44 chars). "
+                "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+    return _fernet_instance
 
 
 def encrypt_key(key: str) -> str:

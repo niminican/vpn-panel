@@ -10,6 +10,8 @@ import {
   QrCode,
   Plus,
   X,
+  Save,
+  Edit3,
 } from 'lucide-react'
 import api from '../api/client'
 import { formatBytes, formatDate, percentUsed } from '../lib/utils'
@@ -41,11 +43,37 @@ interface UserData {
   updated_at: string
 }
 
-interface ConfigData { config_text: string; qr_code_base64: string }
+interface ConfigData {
+  config_text: string; qr_code_base64: string
+  dns: string; allowed_ips: string; endpoint: string; mtu: number | null; persistent_keepalive: number
+}
 interface WhitelistEntry { id: number; user_id: number; address: string; port: number | null; protocol: string; description: string | null }
 interface ScheduleEntry { id: number; user_id: number; day_of_week: number; start_time: string; end_time: string; enabled: boolean }
+interface SessionEntry {
+  id: number
+  user_id: number
+  endpoint: string | null
+  client_ip: string | null
+  connected_at: string
+  disconnected_at: string | null
+  bytes_sent: number
+  bytes_received: number
+  duration_seconds: number | null
+}
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  if (h < 24) return `${h}h ${rm}m`
+  const d = Math.floor(h / 24)
+  const rh = h % 24
+  return `${d}d ${rh}h`
+}
 
 export default function UserDetail() {
   const { id } = useParams()
@@ -53,55 +81,109 @@ export default function UserDetail() {
   const [user, setUser] = useState<UserData | null>(null)
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [showQR, setShowQR] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'config' | 'whitelist' | 'schedule'>('overview')
+  const [tab, setTab] = useState<'overview' | 'config' | 'sessions' | 'whitelist' | 'schedule'>('overview')
 
   // Whitelist state
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
   const [wlForm, setWlForm] = useState({ address: '', port: '', protocol: 'any', description: '' })
 
+  // Sessions state
+  const [sessions, setSessions] = useState<SessionEntry[]>([])
+  const [sessionsTotal, setSessionsTotal] = useState(0)
+  const [sessionsPage, setSessionsPage] = useState(0)
+
   // Schedule state
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
   const [schedForm, setSchedForm] = useState({ day_of_week: '0', start_time: '00:00', end_time: '23:59' })
 
+  // Config edit state
+  const [editingConfig, setEditingConfig] = useState(false)
+  const [configForm, setConfigForm] = useState({ dns: '', allowed_ips: '', endpoint: '', mtu: '', persistent_keepalive: '' })
+
   useEffect(() => { fetchUser() }, [id])
 
   const fetchUser = async () => {
-    const res = await api.get(`/users/${id}`)
-    setUser(res.data)
+    try {
+      const res = await api.get(`/users/${id}`)
+      setUser(res.data)
+    } catch { toast.error('Failed to load user') }
   }
 
   const fetchConfig = async () => {
-    const res = await api.get(`/users/${id}/config`)
-    setConfig(res.data)
+    try {
+      const res = await api.get(`/users/${id}/config`)
+      setConfig(res.data)
+      setConfigForm({
+        dns: res.data.dns || '',
+        allowed_ips: res.data.allowed_ips || '',
+        endpoint: res.data.endpoint || '',
+        mtu: res.data.mtu ? String(res.data.mtu) : '',
+        persistent_keepalive: res.data.persistent_keepalive != null ? String(res.data.persistent_keepalive) : '25',
+      })
+    } catch { toast.error('Failed to load config') }
+  }
+
+  const saveConfig = async () => {
+    try {
+      const payload: Record<string, string | number | null> = {
+        dns: configForm.dns || null,
+        allowed_ips: configForm.allowed_ips || null,
+        endpoint: configForm.endpoint || null,
+        mtu: configForm.mtu ? Number(configForm.mtu) : null,
+        persistent_keepalive: configForm.persistent_keepalive ? Number(configForm.persistent_keepalive) : null,
+      }
+      const res = await api.put(`/users/${id}/config`, payload)
+      setConfig(res.data)
+      setEditingConfig(false)
+      toast.success('Config saved')
+    } catch { toast.error('Failed to save config') }
+  }
+
+  const fetchSessions = async (page = 0) => {
+    try {
+      const res = await api.get(`/users/${id}/sessions`, { params: { skip: page * 50, limit: 50 } })
+      setSessions(res.data.sessions)
+      setSessionsTotal(res.data.total)
+    } catch { toast.error('Failed to load sessions') }
   }
 
   const fetchWhitelist = async () => {
-    const res = await api.get(`/users/${id}/whitelist`)
-    setWhitelist(res.data)
+    try {
+      const res = await api.get(`/users/${id}/whitelist`)
+      setWhitelist(res.data)
+    } catch { toast.error('Failed to load whitelist') }
   }
 
   const fetchSchedules = async () => {
-    const res = await api.get(`/users/${id}/schedules`)
-    setSchedules(res.data)
+    try {
+      const res = await api.get(`/users/${id}/schedules`)
+      setSchedules(res.data)
+    } catch { toast.error('Failed to load schedules') }
   }
 
   const toggleUser = async () => {
-    await api.post(`/users/${id}/toggle`)
-    fetchUser()
-    toast.success(user?.enabled ? 'User disabled' : 'User enabled')
+    try {
+      await api.post(`/users/${id}/toggle`)
+      fetchUser()
+      toast.success(user?.enabled ? 'User disabled' : 'User enabled')
+    } catch { toast.error('Failed to toggle user') }
   }
 
   const resetBandwidth = async () => {
-    await api.post(`/users/${id}/reset-bandwidth`)
-    fetchUser()
-    toast.success('Bandwidth reset')
+    try {
+      await api.post(`/users/${id}/reset-bandwidth`)
+      fetchUser()
+      toast.success('Bandwidth reset')
+    } catch { toast.error('Failed to reset bandwidth') }
   }
 
   const deleteUser = async () => {
     if (!confirm('Are you sure?')) return
-    await api.delete(`/users/${id}`)
-    toast.success('User deleted')
-    navigate('/users')
+    try {
+      await api.delete(`/users/${id}`)
+      toast.success('User deleted')
+      navigate('/users')
+    } catch { toast.error('Failed to delete user') }
   }
 
   const copyConfig = () => {
@@ -134,9 +216,11 @@ export default function UserDetail() {
   }
 
   const deleteWhitelistEntry = async (entryId: number) => {
-    await api.delete(`/users/${id}/whitelist/${entryId}`)
-    fetchWhitelist()
-    toast.success('Entry removed')
+    try {
+      await api.delete(`/users/${id}/whitelist/${entryId}`)
+      fetchWhitelist()
+      toast.success('Entry removed')
+    } catch { toast.error('Failed to remove entry') }
   }
 
   // Schedule
@@ -153,9 +237,11 @@ export default function UserDetail() {
   }
 
   const deleteSchedule = async (schedId: number) => {
-    await api.delete(`/users/${id}/schedules/${schedId}`)
-    fetchSchedules()
-    toast.success('Schedule removed')
+    try {
+      await api.delete(`/users/${id}/schedules/${schedId}`)
+      fetchSchedules()
+      toast.success('Schedule removed')
+    } catch { toast.error('Failed to remove schedule') }
   }
 
   if (!user) {
@@ -203,10 +289,11 @@ export default function UserDetail() {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <div className="flex gap-6">
-          {(['overview', 'config', 'whitelist', 'schedule'] as const).map((t) => (
+          {(['overview', 'config', 'sessions', 'whitelist', 'schedule'] as const).map((t) => (
             <button key={t} onClick={() => {
               setTab(t)
               if (t === 'config' && !config) fetchConfig()
+              if (t === 'sessions' && sessions.length === 0) fetchSessions()
               if (t === 'whitelist' && whitelist.length === 0) fetchWhitelist()
               if (t === 'schedule' && schedules.length === 0) fetchSchedules()
             }}
@@ -267,29 +354,149 @@ export default function UserDetail() {
 
       {/* Config Tab */}
       {tab === 'config' && (
-        <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
-          {config ? (
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <button onClick={copyConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                  <Copy className="h-4 w-4" /> Copy
-                </button>
-                <button onClick={downloadConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                  <Download className="h-4 w-4" /> Download .conf
-                </button>
-                <button onClick={() => setShowQR(!showQR)} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                  <QrCode className="h-4 w-4" /> {showQR ? 'Hide' : 'Show'} QR
+        <div className="space-y-4">
+          <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
+            {config ? (
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <button onClick={copyConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <Copy className="h-4 w-4" /> Copy
+                  </button>
+                  <button onClick={downloadConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <Download className="h-4 w-4" /> Download .conf
+                  </button>
+                  <button onClick={() => setShowQR(!showQR)} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <QrCode className="h-4 w-4" /> {showQR ? 'Hide' : 'Show'} QR
+                  </button>
+                  <button onClick={() => setEditingConfig(!editingConfig)} className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100">
+                    <Edit3 className="h-4 w-4" /> {editingConfig ? 'Cancel Edit' : 'Edit Config'}
+                  </button>
+                </div>
+                <pre className="rounded-lg bg-gray-900 text-green-400 p-4 text-sm font-mono overflow-x-auto whitespace-pre-wrap">{config.config_text}</pre>
+                {showQR && (
+                  <div className="flex justify-center p-4">
+                    <img src={`data:image/png;base64,${config.qr_code_base64}`} alt="QR Code" className="w-64 h-64" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+            )}
+          </div>
+
+          {/* Config Edit Form */}
+          {editingConfig && config && (
+            <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
+              <h3 className="text-sm font-medium text-gray-500 mb-4">Edit Config</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">DNS Servers</label>
+                  <input type="text" value={configForm.dns} onChange={(e) => setConfigForm({ ...configForm, dns: e.target.value })}
+                    placeholder="1.1.1.1,8.8.8.8"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Endpoint</label>
+                  <input type="text" value={configForm.endpoint} onChange={(e) => setConfigForm({ ...configForm, endpoint: e.target.value })}
+                    placeholder="server-ip:51820"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Allowed IPs</label>
+                  <input type="text" value={configForm.allowed_ips} onChange={(e) => setConfigForm({ ...configForm, allowed_ips: e.target.value })}
+                    placeholder="0.0.0.0/0, ::/0"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">MTU</label>
+                    <input type="number" value={configForm.mtu} onChange={(e) => setConfigForm({ ...configForm, mtu: e.target.value })}
+                      placeholder="Auto"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">Keepalive (s)</label>
+                    <input type="number" value={configForm.persistent_keepalive} onChange={(e) => setConfigForm({ ...configForm, persistent_keepalive: e.target.value })}
+                      placeholder="25"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button onClick={saveConfig}
+                  className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                  <Save className="h-4 w-4" /> Save Config
                 </button>
               </div>
-              <pre className="rounded-lg bg-gray-900 text-green-400 p-4 text-sm font-mono overflow-x-auto whitespace-pre-wrap">{config.config_text}</pre>
-              {showQR && (
-                <div className="flex justify-center p-4">
-                  <img src={`data:image/png;base64,${config.qr_code_base64}`} alt="QR Code" className="w-64 h-64" />
-                </div>
-              )}
             </div>
-          ) : (
-            <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+          )}
+        </div>
+      )}
+
+      {/* Sessions Tab */}
+      {tab === 'sessions' && (
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                <th className="px-4 py-3">Connected</th>
+                <th className="px-4 py-3">Disconnected</th>
+                <th className="px-4 py-3">Duration</th>
+                <th className="px-4 py-3">Download</th>
+                <th className="px-4 py-3">Upload</th>
+                <th className="px-4 py-3">Client IP</th>
+                <th className="px-4 py-3">Endpoint</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">No sessions recorded yet.</td>
+                </tr>
+              ) : (
+                sessions.map((s) => (
+                  <tr key={s.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                    <td className="px-4 py-2.5 text-xs text-gray-600">{formatDate(s.connected_at)}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600">
+                      {s.disconnected_at ? formatDate(s.disconnected_at) : (
+                        <span className="inline-flex items-center gap-1 text-green-600 font-medium">
+                          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" /> Connected
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs font-medium">
+                      {s.duration_seconds != null ? formatDuration(s.duration_seconds) : (
+                        <span className="text-green-600">Active</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">{formatBytes(s.bytes_sent)}</td>
+                    <td className="px-4 py-2.5 text-xs">{formatBytes(s.bytes_received)}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.client_ip || '-'}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.endpoint || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {sessionsTotal > 50 && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <span className="text-sm text-gray-500">
+                Showing {sessionsPage * 50 + 1}-{Math.min((sessionsPage + 1) * 50, sessionsTotal)} of {sessionsTotal}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setSessionsPage(Math.max(0, sessionsPage - 1)); fetchSessions(Math.max(0, sessionsPage - 1)) }}
+                  disabled={sessionsPage === 0}
+                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
+                >Previous</button>
+                <button
+                  onClick={() => { setSessionsPage(sessionsPage + 1); fetchSessions(sessionsPage + 1) }}
+                  disabled={(sessionsPage + 1) * 50 >= sessionsTotal}
+                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
+                >Next</button>
+              </div>
+            </div>
           )}
         </div>
       )}

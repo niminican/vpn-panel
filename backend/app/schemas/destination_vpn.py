@@ -27,8 +27,20 @@ class DestinationVPNResponse(BaseModel):
     enabled: bool
     is_running: bool
     user_count: int = 0
+    total_upload: int = 0
+    total_download: int = 0
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DestinationUserStats(BaseModel):
+    id: int
+    username: str
+    is_online: bool = False
+    bandwidth_used_up: int = 0
+    bandwidth_used_down: int = 0
 
     model_config = {"from_attributes": True}
 

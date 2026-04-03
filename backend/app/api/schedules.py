@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
 from app.models.admin import Admin
 from app.models.user import User
 from app.models.schedule import UserSchedule
@@ -41,7 +41,7 @@ def _sync_schedule_rules(user: User, db: Session):
 def list_schedules(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -54,7 +54,7 @@ def add_schedule(
     user_id: int,
     req: ScheduleCreate,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -81,7 +81,7 @@ def update_schedule(
     schedule_id: int,
     req: ScheduleCreate,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -110,7 +110,7 @@ def delete_schedule(
     user_id: int,
     schedule_id: int,
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("users.edit")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

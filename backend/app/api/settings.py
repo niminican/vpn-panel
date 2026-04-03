@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
 from app.models.admin import Admin
 from app.models.setting import Setting
 from app.schemas.setting import SettingUpdate, SettingResponse
@@ -22,7 +22,7 @@ DEFAULT_SETTINGS = {
 @router.get("", response_model=list[SettingResponse])
 def list_settings(
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("settings.manage")),
 ):
     settings = db.query(Setting).all()
     existing_keys = {s.key for s in settings}
@@ -42,7 +42,7 @@ def list_settings(
 def update_settings(
     updates: list[SettingUpdate],
     db: Session = Depends(get_db),
-    _admin: Admin = Depends(get_current_admin),
+    _admin: Admin = Depends(require_permission("settings.manage")),
 ):
     for update in updates:
         setting = db.query(Setting).filter(Setting.key == update.key).first()

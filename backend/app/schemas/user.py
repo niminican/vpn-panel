@@ -62,6 +62,21 @@ class UserResponse(BaseModel):
 class UserConfigResponse(BaseModel):
     config_text: str
     qr_code_base64: str
+    # Config field values (for edit form)
+    dns: str | None = None
+    allowed_ips: str | None = None
+    endpoint: str | None = None
+    mtu: int | None = None
+    persistent_keepalive: int | None = None
+
+
+class UserConfigUpdate(BaseModel):
+    """Update editable config fields for a user."""
+    dns: str | None = None
+    allowed_ips: str | None = None
+    endpoint: str | None = None
+    mtu: int | None = None
+    persistent_keepalive: int | None = None
 
 
 class UserListResponse(BaseModel):

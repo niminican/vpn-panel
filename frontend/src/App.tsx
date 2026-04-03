@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import MainLayout from './components/layout/MainLayout'
@@ -11,9 +12,18 @@ import Logs from './pages/Logs'
 import Packages from './pages/Packages'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
+import AdminManagement from './pages/AdminManagement'
+import AuditLog from './pages/AuditLog'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const { isAuthenticated, admin, fetchAdmin } = useAuthStore()
+
+  useEffect(() => {
+    if (isAuthenticated && !admin) {
+      fetchAdmin()
+    }
+  }, [isAuthenticated])
+
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return <>{children}</>
 }
@@ -37,6 +47,8 @@ export default function App() {
                 <Route path="/packages" element={<Packages />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/alerts" element={<Alerts />} />
+                <Route path="/admin-management" element={<AdminManagement />} />
+                <Route path="/audit-log" element={<AuditLog />} />
               </Routes>
             </MainLayout>
           </ProtectedRoute>

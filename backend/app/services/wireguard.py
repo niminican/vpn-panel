@@ -1,5 +1,6 @@
 import subprocess
 import ipaddress
+import tempfile
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -24,12 +25,20 @@ def _run(cmd: list[str], input_data: str | None = None) -> str:
 
 def generate_keypair() -> tuple[str, str]:
     """Generate a WireGuard private/public key pair."""
+    if settings.demo_mode:
+        import base64, os
+        priv = base64.b64encode(os.urandom(32)).decode()
+        pub = base64.b64encode(os.urandom(32)).decode()
+        return priv, pub
     private_key = _run(["wg", "genkey"])
     public_key = _run(["wg", "pubkey"], input_data=private_key)
     return private_key, public_key
 
 
 def generate_preshared_key() -> str:
+    if settings.demo_mode:
+        import base64, os
+        return base64.b64encode(os.urandom(32)).decode()
     return _run(["wg", "genpsk"])
 
 
@@ -49,15 +58,27 @@ def get_next_available_ip(db: Session) -> str:
 
 
 def generate_client_config(user: User) -> str:
-    """Generate WireGuard client configuration."""
+    """Generate WireGuard client configuration.
+
+    Uses per-user config overrides if set, otherwise falls back to global settings.
+    """
     private_key = decrypt_key(user.wg_private_key)
     server_public_key = get_server_public_key()
+
+    dns = user.config_dns or settings.wg_dns
+    allowed_ips = user.config_allowed_ips or "0.0.0.0/0, ::/0"
+    endpoint = user.config_endpoint or f"{settings.wg_server_ip}:{settings.wg_port}"
+    keepalive = user.config_keepalive if user.config_keepalive is not None else 25
 
     config = f"""[Interface]
 PrivateKey = {private_key}
 Address = {user.assigned_ip}
-DNS = {settings.wg_dns}
+DNS = {dns}
+"""
+    if user.config_mtu:
+        config += f"MTU = {user.config_mtu}\n"
 
+    config += f"""
 [Peer]
 PublicKey = {server_public_key}
 """
@@ -65,15 +86,18 @@ PublicKey = {server_public_key}
         psk = decrypt_key(user.wg_preshared_key)
         config += f"PresharedKey = {psk}\n"
 
-    config += f"""Endpoint = {settings.wg_server_ip}:{settings.wg_port}
-AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25
+    config += f"""Endpoint = {endpoint}
+AllowedIPs = {allowed_ips}
+PersistentKeepalive = {keepalive}
 """
     return config
 
 
 def get_server_public_key() -> str:
     """Get the server's WireGuard public key."""
+    if settings.demo_mode:
+        import base64, os
+        return base64.b64encode(os.urandom(32)).decode()
     config_path = Path(settings.wg_config_dir) / f"{settings.wg_interface}.conf"
     if config_path.exists():
         content = config_path.read_text()
@@ -93,13 +117,13 @@ def add_peer(user: User) -> None:
     cmd = ["wg", "set", settings.wg_interface, "peer", public_key, "allowed-ips", allowed_ip]
 
     if user.wg_preshared_key:
-        # Write PSK to a temp approach via stdin
         psk = decrypt_key(user.wg_preshared_key)
-        psk_path = Path("/tmp/wg_psk_temp")
-        psk_path.write_text(psk)
-        cmd.extend(["preshared-key", str(psk_path)])
-        _run(cmd)
-        psk_path.unlink(missing_ok=True)
+        # Use secure temp file with restrictive permissions
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.psk', delete=True) as f:
+            f.write(psk)
+            f.flush()
+            cmd.extend(["preshared-key", f.name])
+            _run(cmd)
     else:
         _run(cmd)
 

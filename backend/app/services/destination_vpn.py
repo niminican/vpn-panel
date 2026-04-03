@@ -60,6 +60,26 @@ def get_external_ip(interface: str) -> str | None:
     return output if rc == 0 and output else None
 
 
+def check_wg_handshake(interface: str) -> bool:
+    """Check if WireGuard interface has a recent handshake (within 3 minutes)."""
+    rc, output = _run_cmd(["wg", "show", interface, "latest-handshakes"])
+    if rc != 0:
+        return False
+    for line in output.split("\n"):
+        parts = line.strip().split("\t")
+        if len(parts) == 2:
+            try:
+                handshake_time = int(parts[1])
+                if handshake_time == 0:
+                    continue
+                age = int(time.time()) - handshake_time
+                if age < 180:  # 3 minutes
+                    return True
+            except ValueError:
+                pass
+    return False
+
+
 def check_destination_health(dest_id: int) -> dict:
     """Run health check for a destination VPN."""
     db = SessionLocal()
@@ -78,21 +98,21 @@ def check_destination_health(dest_id: int) -> dict:
             "external_ip": None,
         }
 
-        # Check interface
+        # Check interface exists
         result["interface_exists"] = check_interface_exists(interface)
         if not result["interface_exists"]:
             dest.is_running = False
             db.commit()
             return result
 
-        # Ping test
-        latency = ping_through_interface(interface)
-        result["latency_ms"] = latency
-        result["is_running"] = latency is not None
-
-        # Get external IP
-        if result["is_running"]:
-            result["external_ip"] = get_external_ip(interface)
+        # For WireGuard: check handshake instead of ping (since Table=off)
+        if dest.protocol == "wireguard":
+            result["is_running"] = check_wg_handshake(interface)
+        else:
+            # For OpenVPN: use ping
+            latency = ping_through_interface(interface)
+            result["latency_ms"] = latency
+            result["is_running"] = latency is not None
 
         # Update DB status
         dest.is_running = result["is_running"]

@@ -52,3 +52,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def check_security_defaults():
+    """Warn about insecure default values at startup."""
+    import logging
+    logger = logging.getLogger(__name__)
+    warnings = []
+
+    if settings.secret_key == "change-this-to-a-random-secret-key":
+        warnings.append("SECRET_KEY is using the default value! Set a random value in .env")
+
+    if settings.admin_password == "admin":
+        warnings.append("ADMIN_PASSWORD is 'admin'! Change it immediately after first login")
+
+    if settings.encryption_key == "change-this-to-a-fernet-key":
+        warnings.append("ENCRYPTION_KEY is using the default value! Set a Fernet key in .env")
+
+    for w in warnings:
+        logger.critical(f"SECURITY WARNING: {w}")

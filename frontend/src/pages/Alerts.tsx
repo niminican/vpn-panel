@@ -26,21 +26,27 @@ export default function Alerts() {
   const [unreadOnly, setUnreadOnly] = useState(false)
 
   const fetchAlerts = async () => {
-    const res = await api.get('/alerts', { params: { limit: 100, unread_only: unreadOnly } })
-    setAlerts(res.data)
+    try {
+      const res = await api.get('/alerts', { params: { limit: 100, unread_only: unreadOnly } })
+      setAlerts(res.data)
+    } catch { /* may not have permission */ }
   }
 
   useEffect(() => { fetchAlerts() }, [unreadOnly])
 
   const acknowledge = async (id: number) => {
-    await api.post(`/alerts/${id}/acknowledge`)
-    fetchAlerts()
+    try {
+      await api.post(`/alerts/${id}/acknowledge`)
+      fetchAlerts()
+    } catch { toast.error('Failed to acknowledge') }
   }
 
   const acknowledgeAll = async () => {
-    await api.post('/alerts/acknowledge-all')
-    toast.success('All alerts acknowledged')
-    fetchAlerts()
+    try {
+      await api.post('/alerts/acknowledge-all')
+      toast.success('All alerts acknowledged')
+      fetchAlerts()
+    } catch { toast.error('Failed to acknowledge alerts') }
   }
 
   return (

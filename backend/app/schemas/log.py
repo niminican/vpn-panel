@@ -8,6 +8,7 @@ class ConnectionLogResponse(BaseModel):
     username: str | None = None
     source_ip: str
     dest_ip: str
+    dest_hostname: str | None = None
     dest_port: int | None
     protocol: str | None
     bytes_sent: int

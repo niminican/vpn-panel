@@ -8,8 +8,11 @@ import {
   Settings,
   Shield,
   Bell,
+  UserCog,
+  ClipboardList,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useAuthStore } from '../../stores/authStore'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -21,12 +24,22 @@ const navItems = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
+const superAdminItems = [
+  { to: '/admin-management', icon: UserCog, label: 'Admins' },
+  { to: '/audit-log', icon: ClipboardList, label: 'Activity Log' },
+]
+
 interface SidebarProps {
   open: boolean
   onToggle: () => void
 }
 
 export default function Sidebar({ open }: SidebarProps) {
+  const admin = useAuthStore(s => s.admin)
+  const isSuperAdmin = admin?.role === 'super_admin'
+
+  const allItems = isSuperAdmin ? [...navItems, ...superAdminItems] : navItems
+
   return (
     <aside
       className={cn(
@@ -40,7 +53,7 @@ export default function Sidebar({ open }: SidebarProps) {
       </div>
 
       <nav className="flex-1 py-4 space-y-1">
-        {navItems.map((item) => (
+        {allItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

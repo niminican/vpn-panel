@@ -15,8 +15,9 @@ export default function Login() {
     try {
       await login(username, password)
       navigate('/')
-    } catch {
-      toast.error('Invalid credentials')
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } }
+      toast.error(axiosErr.response?.data?.detail || 'Invalid credentials')
     }
   }
 

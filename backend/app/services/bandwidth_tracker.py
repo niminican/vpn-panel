@@ -7,8 +7,6 @@ updates per-user bandwidth usage in DB, and records hourly snapshots.
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
-
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.bandwidth import BandwidthHistory
@@ -111,8 +109,8 @@ def check_bandwidth_limits():
                 from app.services.wireguard import remove_peer
                 try:
                     remove_peer(user.wg_public_key)
-                except RuntimeError:
-                    pass
+                except RuntimeError as e:
+                    logger.warning(f"Failed to remove peer for {user.username}: {e}")
 
         db.commit()
     except Exception as e:
@@ -141,8 +139,8 @@ def reset_monthly_bandwidth():
                 from app.services.wireguard import add_peer
                 try:
                     add_peer(user)
-                except RuntimeError:
-                    pass
+                except RuntimeError as e:
+                    logger.warning(f"Failed to re-add peer for {user.username}: {e}")
 
         db.commit()
     except Exception as e:

@@ -11,7 +11,7 @@ from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 - ensure all models are registered
 from app.models.admin import Admin
 from app.core.security import hash_password
-from app.api import auth, users, destinations, dashboard, whitelist, schedules, logs, alerts, packages
+from app.api import auth, users, destinations, dashboard, whitelist, schedules, logs, alerts, packages, admins
 from app.api import settings as settings_api
 
 logging.basicConfig(
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting VPN Panel...")
+    from app.config import check_security_defaults
+    check_security_defaults()
     Base.metadata.create_all(bind=engine)
     _create_default_admin()
 
@@ -45,6 +47,7 @@ def _create_default_admin():
             admin = Admin(
                 username=settings.admin_username,
                 password_hash=hash_password(settings.admin_password),
+                role="super_admin",
             )
             db.add(admin)
             db.commit()
@@ -111,17 +114,31 @@ def _stop_services():
 
 app = FastAPI(
     title="VPN Panel",
-    version="1.0.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        f"http://localhost:{settings.panel_port}",
+        f"http://127.0.0.1:{settings.panel_port}",
+        "http://localhost:5173",  # Vite dev server
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 # API routes
 app.include_router(auth.router)
@@ -134,6 +151,7 @@ app.include_router(logs.router)
 app.include_router(alerts.router)
 app.include_router(packages.router)
 app.include_router(settings_api.router)
+app.include_router(admins.router)
 
 # Telegram bot webhook
 try:

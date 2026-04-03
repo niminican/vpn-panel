@@ -46,6 +46,13 @@ class User(Base):
     alert_threshold: Mapped[int] = mapped_column(Integer, default=80)  # percentage
     alert_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Custom config overrides (NULL = use defaults from settings)
+    config_dns: Mapped[str | None] = mapped_column(String(200))  # custom DNS servers
+    config_allowed_ips: Mapped[str | None] = mapped_column(String(500))  # custom AllowedIPs
+    config_endpoint: Mapped[str | None] = mapped_column(String(200))  # custom Endpoint
+    config_mtu: Mapped[int | None] = mapped_column(Integer)  # custom MTU
+    config_keepalive: Mapped[int | None] = mapped_column(Integer)  # PersistentKeepalive
+
     # Telegram
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_username: Mapped[str | None] = mapped_column(String(100))

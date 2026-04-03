@@ -9,6 +9,7 @@ interface LogEntry {
   username: string | null
   source_ip: string
   dest_ip: string
+  dest_hostname: string | null
   dest_port: number | null
   protocol: string | null
   bytes_sent: number
@@ -22,6 +23,7 @@ export default function Logs() {
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     dest_ip: '',
+    dest_hostname: '',
     protocol: '',
     user_id: '',
   })
@@ -31,6 +33,7 @@ export default function Logs() {
     try {
       const params: Record<string, string | number> = { skip: page * 50, limit: 50 }
       if (filters.dest_ip) params.dest_ip = filters.dest_ip
+      if (filters.dest_hostname) params.dest_hostname = filters.dest_hostname
       if (filters.protocol) params.protocol = filters.protocol
       if (filters.user_id) params.user_id = Number(filters.user_id)
       const res = await api.get('/logs', { params })
@@ -63,6 +66,16 @@ export default function Logs() {
             className="rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Hostname..."
+            value={filters.dest_hostname}
+            onChange={(e) => setFilters({ ...filters, dest_hostname: e.target.value })}
+            className="rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </div>
         <select
           value={filters.protocol}
           onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
@@ -91,6 +104,7 @@ export default function Logs() {
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Destination</th>
+              <th className="px-4 py-3">Hostname</th>
               <th className="px-4 py-3">Port</th>
               <th className="px-4 py-3">Protocol</th>
             </tr>
@@ -98,11 +112,11 @@ export default function Logs() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">Loading...</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Loading...</td>
               </tr>
             ) : logs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   No connection logs yet. Logs appear when users connect and browse.
                 </td>
               </tr>
@@ -113,6 +127,9 @@ export default function Logs() {
                   <td className="px-4 py-2.5 font-medium">{log.username || log.user_id || '-'}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.source_ip}</td>
                   <td className="px-4 py-2.5 font-mono text-xs">{log.dest_ip}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[200px] truncate" title={log.dest_hostname || ''}>
+                    {log.dest_hostname || <span className="text-gray-300">-</span>}
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.dest_port || '-'}</td>
                   <td className="px-4 py-2.5">
                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium uppercase">
