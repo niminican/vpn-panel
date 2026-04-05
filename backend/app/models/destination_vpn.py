@@ -17,6 +17,10 @@ class DestinationVPN(Base):
     config_file_path: Mapped[str | None] = mapped_column(String(500))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_running: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Start mode: manual (default), on_demand (start when user connects, stop after idle),
+    # auto_restart (restart automatically if stopped unexpectedly)
+    start_mode: Mapped[str] = mapped_column(String(20), default="manual")  # manual, on_demand, auto_restart
+    manually_stopped: Mapped[bool] = mapped_column(Boolean, default=False)  # track manual vs unexpected stop
     routing_table: Mapped[int] = mapped_column(Integer, default=100)  # ip rule table number
     fwmark: Mapped[int] = mapped_column(Integer, default=100)  # iptables mark
 

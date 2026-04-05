@@ -67,5 +67,6 @@ class User(Base):
 
     # Relationships
     whitelist_entries: Mapped[list["UserWhitelist"]] = relationship("UserWhitelist", back_populates="user", cascade="all, delete-orphan")
+    blacklist_entries: Mapped[list["UserBlacklist"]] = relationship("UserBlacklist", back_populates="user", cascade="all, delete-orphan")
     schedules: Mapped[list["UserSchedule"]] = relationship("UserSchedule", back_populates="user", cascade="all, delete-orphan")
     active_sessions: Mapped[list["ActiveSession"]] = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")

@@ -27,6 +27,7 @@ interface Destination {
   config_text: string | null
   enabled: boolean
   is_running: boolean
+  start_mode: string
   user_count: number
   total_upload: number
   total_download: number
@@ -50,6 +51,7 @@ export default function Destinations() {
     protocol: 'auto',
     interface_name: '',
     config_text: '',
+    start_mode: 'manual',
   })
   const [inputMode, setInputMode] = useState<'paste' | 'upload'>('paste')
 
@@ -108,7 +110,7 @@ export default function Destinations() {
       }
       setShowForm(false)
       setEditId(null)
-      setForm({ name: '', protocol: 'auto', interface_name: '', config_text: '' })
+      setForm({ name: '', protocol: 'auto', interface_name: '', config_text: '', start_mode: 'manual' })
       fetchDestinations()
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed')
@@ -158,6 +160,7 @@ export default function Destinations() {
       protocol: dest.protocol,
       interface_name: dest.interface_name,
       config_text: dest.config_text || '',
+      start_mode: dest.start_mode || 'manual',
     })
     setEditId(dest.id)
     setShowForm(true)
@@ -171,7 +174,7 @@ export default function Destinations() {
           onClick={() => {
             setShowForm(!showForm)
             setEditId(null)
-            setForm({ name: '', protocol: 'auto', interface_name: '', config_text: '' })
+            setForm({ name: '', protocol: 'auto', interface_name: '', config_text: '', start_mode: 'manual' })
           }}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
@@ -287,6 +290,21 @@ export default function Destinations() {
             )}
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Mode</label>
+            <select value={form.start_mode} onChange={(e) => setForm({ ...form, start_mode: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="manual">Manual</option>
+              <option value="on_demand">On-Demand (auto start/stop with users)</option>
+              <option value="auto_restart">Auto-Restart (restart if stopped unexpectedly)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              {form.start_mode === 'on_demand' && 'Starts when a user connects, stops after 2 min idle.'}
+              {form.start_mode === 'auto_restart' && 'Automatically restarts if it goes down (not manually stopped).'}
+              {form.start_mode === 'manual' && 'You control start/stop manually.'}
+            </p>
+          </div>
+
           <div className="flex gap-3">
             <button
               type="submit"
@@ -336,6 +354,13 @@ export default function Destinations() {
                     >
                       {dest.is_running ? 'Running' : 'Stopped'}
                     </span>
+                    {dest.start_mode !== 'manual' && (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        dest.start_mode === 'on_demand' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {dest.start_mode === 'on_demand' ? 'On-Demand' : 'Auto-Restart'}
+                      </span>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     {dest.is_running ? (

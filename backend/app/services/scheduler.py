@@ -33,7 +33,7 @@ def start_scheduler():
         check_expiry_dates,
         check_destination_vpn_status,
     )
-    from app.services.destination_vpn import check_all_destinations
+    from app.services.destination_vpn import check_all_destinations, manage_auto_destinations
     from app.services.connection_logger import flush as flush_logs
     from app.services.session_tracker import track_sessions
 
@@ -54,6 +54,7 @@ def start_scheduler():
 
     # Destination VPN health
     scheduler.add_job(check_all_destinations, "interval", seconds=60, id="dest_health")
+    scheduler.add_job(manage_auto_destinations, "interval", seconds=30, id="auto_dest_mgmt")
 
     # Session tracking
     scheduler.add_job(track_sessions, "interval", seconds=60, id="track_sessions")

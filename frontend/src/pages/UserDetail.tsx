@@ -87,11 +87,15 @@ export default function UserDetail() {
   const [user, setUser] = useState<UserData | null>(null)
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [showQR, setShowQR] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'config' | 'sessions' | 'whitelist' | 'schedule'>('overview')
+  const [tab, setTab] = useState<'overview' | 'config' | 'sessions' | 'whitelist' | 'blacklist' | 'schedule'>('overview')
 
   // Whitelist state
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
   const [wlForm, setWlForm] = useState({ address: '', port: '', protocol: 'any', description: '' })
+
+  // Blacklist state
+  const [blacklist, setBlacklist] = useState<WhitelistEntry[]>([])
+  const [blForm, setBlForm] = useState({ address: '', port: '', protocol: 'any', description: '' })
 
   // Sessions state
   const [sessions, setSessions] = useState<SessionEntry[]>([])
@@ -340,6 +344,37 @@ export default function UserDetail() {
     } catch { toast.error('Failed to remove entry') }
   }
 
+  // Blacklist
+  const fetchBlacklist = async () => {
+    try {
+      const res = await api.get(`/users/${id}/blacklist`)
+      setBlacklist(res.data)
+    } catch { toast.error('Failed to load blacklist') }
+  }
+
+  const addBlacklistEntry = async () => {
+    if (!blForm.address) return
+    try {
+      await api.post(`/users/${id}/blacklist`, {
+        address: blForm.address,
+        port: blForm.port ? Number(blForm.port) : null,
+        protocol: blForm.protocol,
+        description: blForm.description || null,
+      })
+      setBlForm({ address: '', port: '', protocol: 'any', description: '' })
+      fetchBlacklist()
+      toast.success('Blacklist entry added')
+    } catch { toast.error('Failed') }
+  }
+
+  const deleteBlacklistEntry = async (entryId: number) => {
+    try {
+      await api.delete(`/users/${id}/blacklist/${entryId}`)
+      fetchBlacklist()
+      toast.success('Entry removed')
+    } catch { toast.error('Failed to remove entry') }
+  }
+
   // Schedule
   const addSchedule = async () => {
     try {
@@ -502,12 +537,13 @@ export default function UserDetail() {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <div className="flex gap-6">
-          {(['overview', 'config', 'sessions', 'whitelist', 'schedule'] as const).map((t) => (
+          {(['overview', 'config', 'sessions', 'whitelist', 'blacklist', 'schedule'] as const).map((t) => (
             <button key={t} onClick={() => {
               setTab(t)
               if (t === 'config' && !config) fetchConfig()
               if (t === 'sessions' && sessions.length === 0) fetchSessions()
               if (t === 'whitelist' && whitelist.length === 0) fetchWhitelist()
+              if (t === 'blacklist' && blacklist.length === 0) fetchBlacklist()
               if (t === 'schedule' && schedules.length === 0) fetchSchedules()
             }}
               className={`border-b-2 px-1 pb-3 text-sm font-medium capitalize transition-colors ${
@@ -777,6 +813,83 @@ export default function UserDetail() {
 
           {whitelist.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">No whitelist entries. User has unrestricted access.</p>
+          )}
+        </div>
+      )}
+
+      {/* Blacklist Tab */}
+      {tab === 'blacklist' && (
+        <div className="space-y-4">
+          <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
+            <h3 className="text-sm font-medium text-gray-500 mb-3">Add Blacklist Entry</h3>
+            <p className="text-xs text-gray-400 mb-3">
+              Block specific addresses. Use <code className="bg-gray-100 px-1 rounded">*</code> to block ALL traffic except whitelist entries.
+            </p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs text-gray-500 mb-1">Address (IP / CIDR / Domain / *)</label>
+                <input type="text" value={blForm.address} onChange={(e) => setBlForm({ ...blForm, address: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="e.g. 1.2.3.4 or * for all" />
+              </div>
+              <div className="w-24">
+                <label className="block text-xs text-gray-500 mb-1">Port</label>
+                <input type="number" value={blForm.port} onChange={(e) => setBlForm({ ...blForm, port: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="All" />
+              </div>
+              <div className="w-28">
+                <label className="block text-xs text-gray-500 mb-1">Protocol</label>
+                <select value={blForm.protocol} onChange={(e) => setBlForm({ ...blForm, protocol: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="any">Any</option>
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                </select>
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <label className="block text-xs text-gray-500 mb-1">Description</label>
+                <input type="text" value={blForm.description} onChange={(e) => setBlForm({ ...blForm, description: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional" />
+              </div>
+              <button onClick={addBlacklistEntry}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 flex items-center gap-1">
+                <Plus className="h-4 w-4" /> Block
+              </button>
+            </div>
+          </div>
+
+          {blacklist.length > 0 && (
+            <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-red-50 text-left text-xs font-medium uppercase text-red-600">
+                    <th className="px-4 py-3">Address</th>
+                    <th className="px-4 py-3">Port</th>
+                    <th className="px-4 py-3">Protocol</th>
+                    <th className="px-4 py-3">Description</th>
+                    <th className="px-4 py-3 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {blacklist.map((entry) => (
+                    <tr key={entry.id} className="border-b last:border-b-0">
+                      <td className="px-4 py-2.5 font-mono text-xs">{entry.address === '*' ? <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">* BLOCK ALL</span> : entry.address}</td>
+                      <td className="px-4 py-2.5">{entry.port || 'All'}</td>
+                      <td className="px-4 py-2.5 uppercase text-xs">{entry.protocol}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{entry.description || '-'}</td>
+                      <td className="px-4 py-2.5">
+                        <button onClick={() => deleteBlacklistEntry(entry.id)} className="rounded p-1 text-red-400 hover:bg-red-50">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {blacklist.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">No blacklist entries. Nothing is blocked.</p>
           )}
         </div>
       )}

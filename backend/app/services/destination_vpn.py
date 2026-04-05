@@ -133,12 +133,109 @@ def check_all_destinations():
                 health = check_destination_health(dest.id)
                 if not health.get("is_running") and dest.is_running:
                     logger.warning(f"Destination VPN '{dest.name}' went DOWN")
+                    dest.is_running = False
+                    db.commit()
                 elif health.get("is_running") and not dest.is_running:
                     logger.info(f"Destination VPN '{dest.name}' came UP")
+                    dest.is_running = True
+                    db.commit()
             except Exception as e:
                 logger.error(f"Health check failed for {dest.name}: {e}")
     finally:
         db.close()
+
+
+def manage_auto_destinations():
+    """Manage auto-start/on-demand destination VPNs. Called every 30 seconds.
+
+    on_demand: Start when users are online, stop after 2 min idle.
+    auto_restart: Restart if stopped unexpectedly (not manually).
+    """
+    from app.services.wireguard import get_peers_status
+    from datetime import datetime, timezone
+
+    db = SessionLocal()
+    try:
+        dests = db.query(DestinationVPN).filter(DestinationVPN.enabled == True).all()  # noqa: E712
+        peers = get_peers_status()
+
+        for dest in dests:
+            if dest.start_mode == "manual":
+                continue
+
+            # Count online users for this destination
+            online_count = 0
+            for user in dest.users:
+                if not user.enabled:
+                    continue
+                for peer in peers:
+                    if peer["public_key"] == user.wg_public_key:
+                        if peer.get("latest_handshake") and (
+                            datetime.now(timezone.utc).timestamp() - peer["latest_handshake"] < 120
+                        ):
+                            online_count += 1
+                        break
+
+            if dest.start_mode == "on_demand":
+                if online_count > 0 and not dest.is_running:
+                    # Users online, start the destination
+                    logger.info(f"On-demand: Starting '{dest.name}' ({online_count} users online)")
+                    _start_destination_internal(dest, db)
+                elif online_count == 0 and dest.is_running and not dest.manually_stopped:
+                    # No users online for 2 min, stop it
+                    logger.info(f"On-demand: Stopping '{dest.name}' (no users online)")
+                    _stop_destination_internal(dest, db)
+
+            elif dest.start_mode == "auto_restart":
+                if not dest.is_running and not dest.manually_stopped:
+                    # Stopped unexpectedly, restart it
+                    logger.info(f"Auto-restart: Restarting '{dest.name}'")
+                    _start_destination_internal(dest, db)
+
+    except Exception as e:
+        logger.error(f"manage_auto_destinations error: {e}")
+    finally:
+        db.close()
+
+
+def _start_destination_internal(dest, db):
+    """Internal helper to start a destination without API context."""
+    import subprocess
+    from pathlib import Path
+
+    try:
+        iface = dest.interface_name
+        if dest.protocol == "wireguard":
+            config_path = dest.config_file_path or iface
+            subprocess.run(["wg-quick", "up", config_path], capture_output=True, timeout=30, check=True)
+        elif dest.protocol == "openvpn":
+            subprocess.run(["systemctl", "start", f"openvpn@{iface}"], capture_output=True, timeout=30, check=True)
+
+        dest.is_running = True
+        dest.manually_stopped = False
+        db.commit()
+        logger.info(f"Auto-started destination '{dest.name}'")
+    except Exception as e:
+        logger.error(f"Failed to auto-start '{dest.name}': {e}")
+
+
+def _stop_destination_internal(dest, db):
+    """Internal helper to stop a destination without API context."""
+    import subprocess
+
+    try:
+        iface = dest.interface_name
+        if dest.protocol == "wireguard":
+            config_path = dest.config_file_path or iface
+            subprocess.run(["wg-quick", "down", config_path], capture_output=True, timeout=15, check=True)
+        elif dest.protocol == "openvpn":
+            subprocess.run(["systemctl", "stop", f"openvpn@{iface}"], capture_output=True, timeout=15, check=True)
+
+        dest.is_running = False
+        db.commit()
+        logger.info(f"Auto-stopped destination '{dest.name}'")
+    except Exception as e:
+        logger.error(f"Failed to auto-stop '{dest.name}': {e}")
 
 
 def run_speed_test(interface: str) -> dict | None:

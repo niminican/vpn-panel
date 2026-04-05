@@ -7,6 +7,7 @@ class DestinationVPNCreate(BaseModel):
     protocol: str  # wireguard, openvpn
     interface_name: str
     config_text: str | None = None
+    start_mode: str = "manual"  # manual, on_demand, auto_restart
 
 
 class DestinationVPNUpdate(BaseModel):
@@ -15,6 +16,7 @@ class DestinationVPNUpdate(BaseModel):
     interface_name: str | None = None
     config_text: str | None = None
     enabled: bool | None = None
+    start_mode: str | None = None
 
 
 class DestinationVPNResponse(BaseModel):
@@ -26,6 +28,7 @@ class DestinationVPNResponse(BaseModel):
     config_file_path: str | None
     enabled: bool
     is_running: bool
+    start_mode: str = "manual"
     user_count: int = 0
     total_upload: int = 0
     total_download: int = 0

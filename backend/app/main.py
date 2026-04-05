@@ -11,7 +11,7 @@ from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 - ensure all models are registered
 from app.models.admin import Admin
 from app.core.security import hash_password
-from app.api import auth, users, destinations, dashboard, whitelist, schedules, logs, alerts, packages, admins
+from app.api import auth, users, destinations, dashboard, whitelist, blacklist, schedules, logs, alerts, packages, admins
 from app.api import settings as settings_api
 
 logging.basicConfig(
@@ -146,6 +146,7 @@ app.include_router(users.router)
 app.include_router(destinations.router)
 app.include_router(dashboard.router)
 app.include_router(whitelist.router)
+app.include_router(blacklist.router)
 app.include_router(schedules.router)
 app.include_router(logs.router)
 app.include_router(alerts.router)

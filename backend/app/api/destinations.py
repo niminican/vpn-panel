@@ -270,6 +270,9 @@ def start_destination(
     if not dest:
         raise NotFoundError("Destination VPN")
 
+    dest.manually_stopped = False  # Clear manual stop flag on start
+    db.commit()
+
     # Demo mode: just toggle the status without running actual commands
     if settings.demo_mode:
         dest.is_running = True
@@ -368,6 +371,9 @@ def stop_destination(
     dest = db.query(DestinationVPN).filter(DestinationVPN.id == dest_id).first()
     if not dest:
         raise NotFoundError("Destination VPN")
+
+    dest.manually_stopped = True  # Mark as manually stopped
+    db.commit()
 
     # Demo mode
     if settings.demo_mode:

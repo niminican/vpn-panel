@@ -118,6 +118,94 @@ def remove_user_whitelist(user_id: int, user_ip: str):
     logger.info(f"Removed whitelist for user {user_id}")
 
 
+# ─── Blacklist ──────────────────────────────────────────────
+
+def setup_user_blacklist(user_id: int, user_ip: str, bl_entries: list[dict], wl_entries: list[dict] | None = None):
+    """Create per-user blacklist chain.
+
+    If address is '*', block ALL traffic except whitelist entries.
+    Otherwise block specific addresses.
+    wl_entries are used when '*' is in blacklist to allow exceptions.
+    """
+    chain = f"vpn_bl_{int(user_id)}"
+    ip_addr = validate_ip(user_ip.split("/")[0])
+
+    # Remove existing blacklist chain
+    remove_user_blacklist(user_id, user_ip)
+
+    if not bl_entries:
+        return
+
+    # Create chain
+    validate_chain_name(chain)
+    _run(["iptables", "-N", chain])
+
+    # Allow established/related first
+    _run(["iptables", "-A", chain, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"])
+
+    has_wildcard = any(e["address"] == "*" for e in bl_entries)
+
+    if has_wildcard:
+        # Block ALL except whitelist: whitelist entries -> ACCEPT, then DROP all
+        if wl_entries:
+            for entry in wl_entries:
+                cmd = ["iptables", "-A", chain]
+                if entry.get("protocol") and entry["protocol"] != "any":
+                    proto = validate_protocol(entry["protocol"])
+                    cmd.extend(["-p", proto])
+                dest = validate_address(entry["address"])
+                cmd.extend(["-d", dest])
+                if entry.get("port"):
+                    proto = entry.get("protocol", "tcp")
+                    if proto == "any":
+                        proto = "tcp"
+                    proto = validate_protocol(proto)
+                    port = validate_port(int(entry["port"]))
+                    cmd.extend(["-p", proto, "--dport", str(port)])
+                cmd.extend(["-j", "ACCEPT"])
+                _run(cmd)
+        # DROP everything else
+        _run(["iptables", "-A", chain, "-j", "DROP"])
+    else:
+        # Block specific addresses
+        for entry in bl_entries:
+            cmd = ["iptables", "-A", chain]
+            if entry.get("protocol") and entry["protocol"] != "any":
+                proto = validate_protocol(entry["protocol"])
+                cmd.extend(["-p", proto])
+            dest = validate_address(entry["address"])
+            cmd.extend(["-d", dest])
+            if entry.get("port"):
+                proto = entry.get("protocol", "tcp")
+                if proto == "any":
+                    proto = "tcp"
+                proto = validate_protocol(proto)
+                port = validate_port(int(entry["port"]))
+                cmd.extend(["-p", proto, "--dport", str(port)])
+            cmd.extend(["-j", "DROP"])
+            _run(cmd)
+
+    # Jump to blacklist chain from FORWARD
+    _run(["iptables", "-I", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain])
+
+    logger.info(f"Set up blacklist for user {user_id} with {len(bl_entries)} entries (wildcard={'yes' if has_wildcard else 'no'})")
+
+
+def remove_user_blacklist(user_id: int, user_ip: str):
+    """Remove per-user blacklist chain."""
+    chain = f"vpn_bl_{int(user_id)}"
+    ip_addr = validate_ip(user_ip.split("/")[0])
+
+    if not _chain_exists(chain):
+        return
+
+    _run(["iptables", "-D", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain], check=False)
+    _run(["iptables", "-F", chain], check=False)
+    _run(["iptables", "-X", chain], check=False)
+
+    logger.info(f"Removed blacklist for user {user_id}")
+
+
 # ─── Time Schedule ───────────────────────────────────────────
 
 def apply_time_schedule(user_id: int, user_ip: str, schedules: list[dict]):
