@@ -1,8 +1,10 @@
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
+const BASE = import.meta.env.BASE_URL?.replace(/\/+$/, '') || ''
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${BASE}/api`,
 })
 
 api.interceptors.request.use((config) => {
@@ -37,7 +39,7 @@ api.interceptors.response.use(
       if (refreshToken && !error.config._retry) {
         error.config._retry = true
         try {
-          const res = await axios.post('/api/auth/refresh', {
+          const res = await axios.post(`${BASE}/api/auth/refresh`, {
             refresh_token: refreshToken,
           })
           localStorage.setItem('access_token', res.data.access_token)
@@ -47,12 +49,12 @@ api.interceptors.response.use(
         } catch {
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
+          window.location.href = `${BASE}/login`
         }
       } else {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
-        window.location.href = '/login'
+        window.location.href = `${BASE}/login`
       }
     }
     return Promise.reject(error)

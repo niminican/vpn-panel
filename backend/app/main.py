@@ -124,6 +124,7 @@ app = FastAPI(
     title="VPN Panel",
     version="1.2.0",
     lifespan=lifespan,
+    root_path="/vpn",
 )
 
 app.add_middleware(
@@ -132,6 +133,9 @@ app.add_middleware(
         f"http://localhost:{settings.panel_port}",
         f"http://127.0.0.1:{settings.panel_port}",
         "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",
+        "https://mafia.namiravaei.ca",
+        "http://mafia.namiravaei.ca",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -170,12 +174,11 @@ try:
 except Exception as e:
     logger.warning(f"Telegram bot setup failed: {e}")
 
-# Serve frontend static files (production)
-frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
-
-
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+# Serve frontend static files (production) — must be LAST (catch-all)
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
