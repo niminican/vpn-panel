@@ -14,7 +14,9 @@
 11. [Admin Management](#admin-management)
 12. [Activity Log](#activity-log)
 13. [Backup & Restore](#backup--restore)
-14. [Troubleshooting](#troubleshooting)
+14. [Mobile & PWA](#mobile--pwa)
+15. [Reverse Proxy Setup](#reverse-proxy-setup)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -29,6 +31,9 @@ VPN Panel is a web-based management panel for sharing VPN connections with multi
 - **Connection Logging**: Track all connections with DNS hostname resolution
 - **Alerts**: Bandwidth warnings, expiry notifications via panel/email/Telegram
 - **Multi-Admin RBAC**: Role-based access control with granular permissions
+- **Session Enrichment**: GeoIP location (country/city/ISP) and OS detection for connected users
+- **PWA Support**: Install as a mobile app via Add to Home Screen
+- **Mobile Responsive**: Full mobile-optimized layout with sidebar drawer
 
 ---
 
@@ -74,7 +79,7 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 
 ## First Login
 
-1. Open `http://your-server-ip:8080` in a browser
+1. Open `http://your-server-ip:8080` (direct) or `https://your-domain.com/vpn/` (behind Nginx) in a browser
 2. Login with your configured admin credentials (default: `admin`/`admin`)
 3. **Important**: Change the default password immediately via Settings > Change Password
 
@@ -112,11 +117,22 @@ Destination VPNs are the upstream VPN connections that your users' traffic is ro
 - Click the **Play** button to start a destination
 - Click the **Stop** button to stop it
 - The panel automatically sets up routing rules so only VPN user traffic goes through the destination
+- **SSH Protection**: The panel ensures SSH access (port 22) and established connections are always preserved before making any routing changes
+
+### Start Modes
+
+Each destination can be configured with one of three start modes, selectable directly from the destination card:
+
+- **Manual** (default): Admin manually starts and stops the destination
+- **On-demand**: Automatically starts when users are assigned to it. Automatically stops after 5 minutes of idle (no connected users). Prevents chicken-egg problem by using an idle grace period.
+- **Auto-restart**: Automatically restarts the destination if it goes down. Useful for destinations that should always be available.
+
+The current start mode is displayed on each destination card. A description appears below the card when a non-manual mode is selected.
 
 ### Health Monitoring
 
 - Destinations are health-checked every 60 seconds
-- WireGuard: checks handshake recency
+- WireGuard: checks interface existence (primary) and handshake recency (supplementary)
 - OpenVPN: checks via ping
 - Status shown as green (up) or red (down)
 
@@ -159,15 +175,28 @@ Click a user to view their detail page with tabs:
   - Changes are saved per-user and reflected in the generated config/QR code
 
 #### Sessions
-- Connection history showing connect/disconnect times, duration, and per-session bandwidth
-- **Client IP**: Source IP address the user connected from (extracted from WireGuard endpoint)
-- **Endpoint**: Full endpoint (IP:port) of the connection
-- Active sessions shown with green pulse indicator
+- Connection history displayed as cards (not a table) with rich details per session:
+  - **Status**: Active (green pulse) or disconnected with duration
+  - **GeoIP Location**: Country flag emoji, country name, city (e.g., 🇨🇦 Canada, Toronto)
+  - **ISP**: Internet service provider name (e.g., Rogers Communications)
+  - **ASN**: Autonomous system number
+  - **OS Detection**: Detected operating system based on TTL fingerprinting (Windows, Linux/Android, macOS/iOS)
+  - **Client IP**: Source IP address the user connected from
+  - **Endpoint**: Full endpoint (IP:port) of the connection
+  - **Traffic**: Download and upload bytes per session
+  - **TTL**: Raw TTL value observed from the client
+- GeoIP data is enriched using MaxMind GeoLite2 databases (City + ASN)
+- OS detection works by pinging the client's VPN IP through the WireGuard interface and analyzing the TTL value
 
 #### Whitelist
 - Add IP/CIDR entries to restrict which destinations this user can access
 - When entries exist, only whitelisted destinations are allowed (everything else blocked)
 - Leave empty for unrestricted access
+
+#### Blacklist
+- Add IP/CIDR entries to block specific destinations for this user
+- Complements the whitelist: whitelist allows only specified destinations, blacklist blocks specified destinations
+- Useful for blocking specific services or IP ranges
 
 #### Schedule
 - Define time-based access windows (day of week + time range)
@@ -343,6 +372,74 @@ docker compose up -d  # or systemctl start vpn-panel
 
 ---
 
+## Mobile & PWA
+
+### Progressive Web App (PWA)
+
+VPN Panel supports installation as a PWA (Progressive Web App) on mobile devices:
+
+1. Open the panel URL in your mobile browser (Chrome on Android, Safari on iOS)
+2. Tap the browser menu (⋮ on Chrome, Share on Safari)
+3. Select **Add to Home Screen**
+4. The panel will appear as a standalone app with its own icon
+
+The app runs in standalone mode (no browser chrome) and supports the full panel functionality.
+
+### Mobile Layout
+
+- On screens smaller than 768px, the sidebar collapses into an overlay drawer
+- Tap the hamburger menu (☰) to open the sidebar
+- The sidebar closes automatically when navigating to a page
+- Dashboard uses a compact 2-column grid on mobile
+- All tables and forms are optimized for touch interaction
+
+---
+
+## Reverse Proxy Setup
+
+VPN Panel can run behind an Nginx reverse proxy at a sub-path (e.g., `/vpn/`). This allows multiple projects to share the same domain.
+
+### Nginx Configuration
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location /vpn/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /vpn;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location = / {
+        return 302 /vpn/;
+    }
+}
+```
+
+### SSL with Certbot
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
+```
+
+### DNS Setup
+
+Create an A record pointing your domain to the server's IP address:
+- **Type**: A
+- **Name**: your subdomain (e.g., `vpn`)
+- **Value**: Your server's public IP
+
+---
+
 ## Troubleshooting
 
 ### Panel won't start
@@ -364,8 +461,23 @@ docker compose up -d  # or systemctl start vpn-panel
 
 ### Destination VPN shows as down
 - Check interface exists: `ip link show <interface>`
-- For WireGuard: verify handshake is recent: `wg show <interface>`
+- For WireGuard: interface existence is the primary check; handshake recency is supplementary
 - Check config file permissions: should be 600
+- For on-demand mode: destination may stop after 5 minutes if no users are connected
+
+### GeoIP data not showing in sessions
+- Check that GeoLite2 databases exist in `backend/data/geoip/`:
+  - `GeoLite2-City.mmdb` (~62MB)
+  - `GeoLite2-ASN.mmdb` (~12MB)
+- If missing, restart the panel service (they auto-download on startup)
+- Or manually download: `curl -L -o GeoLite2-City.mmdb https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-City.mmdb`
+- GeoIP only works for public IPs (private/local IPs are skipped)
+- Existing sessions can be backfilled by restarting the tracker
+
+### OS detection shows as Unknown
+- OS detection requires the client to be actively connected (responds to ping)
+- Detection works via TTL: Windows (~127), Linux/Android/macOS (~63)
+- If the client blocks ICMP ping, OS cannot be detected
 
 ### Rate limited on login
 - After 5 failed attempts, login is locked for 15 minutes

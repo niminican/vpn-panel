@@ -175,7 +175,7 @@ def draw_section_label(c, x, y, text, color):
 
 
 def generate_architecture_pdf():
-    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Architecture-v1.2.0.pdf"
+    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Architecture-v1.3.0.pdf"
 
     # Use landscape A3 for more space
     page_w, page_h = landscape(A3)
@@ -195,7 +195,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - System Architecture")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.2.0  |  High-Level Architecture Overview  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  High-Level Architecture Overview  |  April 2026")
 
     # ── Section Labels ────────────────────────────────────────
     draw_section_label(c, 30, page_h - 85, "CLIENTS", C['client_hd'])
@@ -480,7 +480,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - Data Model & Entity Relationships")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.2.0  |  SQLite Database Schema (13 Tables)  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  SQLite Database Schema (13 Tables)  |  April 2026")
 
     # ── Central: User Model ──────────────────────────────────
     ux, uy = 420, page_h - 280
@@ -693,7 +693,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - Data Flow & Process Diagrams")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.2.0  |  Key Process Flows  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  Key Process Flows  |  April 2026")
 
     # ── Flow 1: User Creation ────────────────────────────────
     flow1_y = page_h - 90
@@ -833,7 +833,7 @@ def generate_architecture_pdf():
     # ── Footer ───────────────────────────────────────────────
     c.setFont("Helvetica", 7)
     c.setFillColor(C['text_light'])
-    c.drawCentredString(page_w/2, 15, "VPN Panel Architecture v1.2.0 - Generated April 2026")
+    c.drawCentredString(page_w/2, 15, "VPN Panel Architecture v1.3.0 - Generated April 2026")
 
     # Add page numbers to all pages
     c.save()

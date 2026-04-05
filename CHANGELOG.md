@@ -2,6 +2,53 @@
 
 All notable changes to VPN Panel will be documented in this file.
 
+## [1.3.0] - 2026-04-05 (v0.1)
+
+### Added
+- **Session enrichment with GeoIP**: Sessions now show country, city, ISP, and ASN using MaxMind GeoLite2 databases. Country flags displayed via emoji.
+- **OS detection via TTL fingerprinting**: Detects client OS (Windows, Linux/Android, macOS/iOS) by pinging the client's VPN IP and analyzing TTL values.
+- **Destination start modes**: Three modes for each destination VPN:
+  - **Manual**: Admin manually starts/stops (default)
+  - **On-demand**: Auto-starts when users are assigned, auto-stops after 5 min idle (with chicken-egg protection)
+  - **Auto-restart**: Automatically restarts if the destination goes down
+- **Inline start mode selector**: Change start mode directly from destination cards without opening settings
+- **PWA support**: Add to Home Screen on mobile devices with standalone display, custom icons, and app-like experience
+- **Mobile responsive layout**: Sidebar becomes overlay drawer on mobile (<768px), compact headers, stacked cards, proper viewport handling (`100dvh`)
+- **Per-user blacklist**: Block specific IP/CIDR ranges per user via iptables (complement to whitelist)
+- **Sub-path deployment**: Panel can be served at `/vpn/` behind Nginx reverse proxy (coordinated base path across Vite, React Router, FastAPI root_path, and API client)
+- **SSL/HTTPS support**: Nginx reverse proxy with Let's Encrypt SSL via Certbot
+- **SSH protection**: `ensure_ssh_protection()` safeguards SSH access (port 22) and ESTABLISHED connections before any iptables/routing changes during destination start/stop
+- **GeoIP database auto-download**: Downloads GeoLite2-City and GeoLite2-ASN databases from GitHub mirror on startup if missing
+- New services: `geoip.py` (IP geolocation), `os_detect.py` (TTL-based OS detection)
+- Start mode description text shown below destination cards for non-manual modes
+- Toronto timezone support for schedules
+
+### Changed
+- **Sessions tab redesigned**: Changed from table layout to card-based layout with status badges, OS badges, country flags, ISP info, and traffic stats per session
+- **Destination health check improved**: WireGuard destinations now check interface existence (not just handshake recency), making status more reliable
+- **On-demand idle detection**: Uses `idle_since` database timestamp with 5-minute timeout instead of immediate stop, preventing chicken-egg problem
+- FastAPI app now uses `root_path="/vpn"` for sub-path deployment
+- CORS origins updated to include production domain
+- Frontend uses dynamic `import.meta.env.BASE_URL` for API calls and routing
+- Dashboard uses 2-column grid on mobile with smaller stat cards
+- Login page optimized for mobile with `min-h-[100dvh]`
+
+### Fixed
+- **Server connectivity protection**: Destination VPN start/stop no longer risks breaking SSH access or default routes
+- **Destination incorrectly showing stopped**: Fixed two bugs - health check using stale handshake data, and on-demand mode immediately stopping without idle grace period
+- **AlertResponse schema**: `sent_at` field changed from `str` to `datetime` (was causing HTTP 500)
+- **UserBlacklist import**: Added missing import in models `__init__.py`
+- **Test suite stability**: Rate limiter now resets between tests; ENCRYPTION_KEY uses valid Fernet key
+- **TypeScript `import.meta.env`**: Added Vite client type references
+- **Health check endpoint 404**: Moved endpoint definition before static file catch-all mount
+
+### Database Changes
+- `destination_vpns`: Added `idle_since` (DateTime) column
+- `user_sessions`: Added `country` (String), `country_code` (String), `city` (String), `isp` (String), `asn` (Integer), `os_hint` (String), `ttl` (Integer) columns
+
+### Dependencies
+- Added `geoip2>=4.8.0,<5.0.0` for MaxMind GeoIP lookups
+
 ## [1.2.0] - 2026-04-03
 
 ### Added

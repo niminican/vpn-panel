@@ -364,7 +364,7 @@ def add_cover_footer(canvas, doc):
 
 def generate_user_guide_pdf():
     """Generate the User Guide PDF."""
-    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-User-Guide-v1.2.0.pdf"
+    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-User-Guide-v1.3.0.pdf"
     styles = create_styles()
 
     doc = SimpleDocTemplate(
@@ -388,7 +388,7 @@ def generate_user_guide_pdf():
     story.append(Spacer(1, 10*mm))
     story.append(HRFlowable(width="60%", thickness=2, color=HexColor('#3182ce')))
     story.append(Spacer(1, 10*mm))
-    story.append(Paragraph("Version 1.2.0", styles['DocSubtitle']))
+    story.append(Paragraph("Version 1.3.0", styles['DocSubtitle']))
     story.append(Paragraph("April 2026", styles['DocSubtitle']))
     story.append(Spacer(1, 30*mm))
     story.append(Paragraph(
@@ -418,7 +418,7 @@ def generate_user_guide_pdf():
 
 def generate_changelog_pdf():
     """Generate the Changelog PDF."""
-    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Changelog-v1.2.0.pdf"
+    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Changelog-v1.3.0.pdf"
     styles = create_styles()
 
     doc = SimpleDocTemplate(
@@ -442,7 +442,7 @@ def generate_changelog_pdf():
     story.append(Spacer(1, 10*mm))
     story.append(HRFlowable(width="60%", thickness=2, color=HexColor('#3182ce')))
     story.append(Spacer(1, 10*mm))
-    story.append(Paragraph("Version History: 1.0.0 - 1.2.0", styles['DocSubtitle']))
+    story.append(Paragraph("Version History: 1.0.0 - 1.3.0", styles['DocSubtitle']))
     story.append(Paragraph("April 2026", styles['DocSubtitle']))
     story.append(PageBreak())
 
