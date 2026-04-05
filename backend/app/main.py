@@ -134,8 +134,8 @@ app.add_middleware(
         f"http://127.0.0.1:{settings.panel_port}",
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",
-        "https://mafia.namiravaei.ca",
-        "http://mafia.namiravaei.ca",
+        "https://mafia.namiravaei.com",
+        "http://mafia.namiravaei.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
