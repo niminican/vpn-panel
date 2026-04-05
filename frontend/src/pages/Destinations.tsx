@@ -147,6 +147,28 @@ export default function Destinations() {
     }
   }
 
+  const changeStartMode = async (id: number, mode: string) => {
+    try {
+      await api.put(`/destinations/${id}`, { start_mode: mode })
+      toast.success(`Start mode changed to ${mode === 'manual' ? 'Manual' : mode === 'on_demand' ? 'On-Demand' : 'Auto-Restart'}`)
+      fetchDestinations()
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update')
+    }
+  }
+
+  const startModeLabel = (mode: string) => {
+    if (mode === 'on_demand') return 'On-Demand'
+    if (mode === 'auto_restart') return 'Auto-Restart'
+    return 'Manual'
+  }
+
+  const startModeColor = (mode: string) => {
+    if (mode === 'on_demand') return 'text-blue-600 bg-blue-50 border-blue-200'
+    if (mode === 'auto_restart') return 'text-purple-600 bg-purple-50 border-purple-200'
+    return 'text-gray-600 bg-gray-50 border-gray-200'
+  }
+
   const deleteDest = async (id: number) => {
     if (!confirm('Delete this destination?')) return
     await api.delete(`/destinations/${id}`)
@@ -342,42 +364,60 @@ export default function Destinations() {
             >
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Globe className="h-5 w-5 text-blue-500" />
                     <h3 className="font-medium text-gray-900">{dest.name}</h3>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        dest.is_running
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {dest.is_running ? 'Running' : 'Stopped'}
-                    </span>
-                    {dest.start_mode !== 'manual' && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        dest.start_mode === 'on_demand' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                      }`}>
-                        {dest.start_mode === 'on_demand' ? 'On-Demand' : 'Auto-Restart'}
+                    {/* Status badge with mode info */}
+                    {dest.is_running ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        Running
+                        <span className="text-green-500 font-normal">
+                          · {startModeLabel(dest.start_mode)}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500">
+                        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+                        Stopped
+                        <span className="text-gray-400 font-normal">
+                          · Mode: {startModeLabel(dest.start_mode)}
+                        </span>
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-1.5">
+                    {/* Inline Start Mode Selector */}
+                    <select
+                      value={dest.start_mode}
+                      onChange={(e) => changeStartMode(dest.id, e.target.value)}
+                      className={`rounded-lg border px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer ${startModeColor(dest.start_mode)}`}
+                      title="Start Mode"
+                    >
+                      <option value="manual">⚙ Manual</option>
+                      <option value="on_demand">⚡ On-Demand</option>
+                      <option value="auto_restart">🔄 Auto-Restart</option>
+                    </select>
+
+                    <div className="w-px h-6 bg-gray-200 mx-0.5" />
+
                     {dest.is_running ? (
                       <button
                         onClick={() => stopDest(dest.id)}
-                        className="rounded p-1.5 text-red-500 hover:bg-red-50"
+                        className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200"
                         title="Stop"
                       >
-                        <Square className="h-4 w-4" />
+                        <Square className="h-3.5 w-3.5" />
+                        Stop
                       </button>
                     ) : (
                       <button
                         onClick={() => startDest(dest.id)}
-                        className="rounded p-1.5 text-green-500 hover:bg-green-50"
+                        className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 border border-green-200"
                         title="Start"
                       >
-                        <Play className="h-4 w-4" />
+                        <Play className="h-3.5 w-3.5" />
+                        Start
                       </button>
                     )}
                     <button
