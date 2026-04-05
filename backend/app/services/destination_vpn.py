@@ -126,7 +126,12 @@ def check_wg_handshake(interface: str) -> bool:
 
 
 def check_destination_health(dest_id: int) -> dict:
-    """Run health check for a destination VPN."""
+    """Run health check for a destination VPN.
+
+    For WireGuard: interface existence = running (handshake may be stale
+    if no traffic flows, but the tunnel is still up and functional).
+    For OpenVPN: interface existence + ping reachability.
+    """
     db = SessionLocal()
     try:
         dest = db.query(DestinationVPN).filter(DestinationVPN.id == dest_id).first()
@@ -150,11 +155,15 @@ def check_destination_health(dest_id: int) -> dict:
             db.commit()
             return result
 
-        # For WireGuard: check handshake instead of ping (since Table=off)
+        # Interface exists → it's running
+        # For WireGuard: interface up = running (don't rely on handshake which
+        # can be stale when no traffic flows)
         if dest.protocol == "wireguard":
-            result["is_running"] = check_wg_handshake(interface)
+            result["is_running"] = True
+            # Handshake is supplementary info only, not used for status
+            result["has_recent_handshake"] = check_wg_handshake(interface)
         else:
-            # For OpenVPN: use ping
+            # For OpenVPN: use ping as additional check
             latency = ping_through_interface(interface)
             result["latency_ms"] = latency
             result["is_running"] = latency is not None
@@ -193,22 +202,28 @@ def check_all_destinations():
 def manage_auto_destinations():
     """Manage auto-start/on-demand destination VPNs. Called every 30 seconds.
 
-    on_demand: Start when users are online, stop after 2 min idle.
+    on_demand: Start when users are online (connected to wg0), stop after
+    5 minutes of no online users.  Uses idle_since timestamp to avoid
+    chicken-egg problems (user can't connect if destination is down).
     auto_restart: Restart if stopped unexpectedly (not manually).
     """
     from app.services.wireguard import get_peers_status
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
+
+    IDLE_TIMEOUT = timedelta(minutes=5)
 
     db = SessionLocal()
     try:
         dests = db.query(DestinationVPN).filter(DestinationVPN.enabled == True).all()  # noqa: E712
         peers = get_peers_status()
+        now = datetime.now(timezone.utc)
 
         for dest in dests:
             if dest.start_mode == "manual":
                 continue
 
             # Count online users for this destination
+            # Check if user's peer on wg0 has recent handshake (connected to server)
             online_count = 0
             for user in dest.users:
                 if not user.enabled:
@@ -216,20 +231,38 @@ def manage_auto_destinations():
                 for peer in peers:
                     if peer["public_key"] == user.wg_public_key:
                         if peer.get("latest_handshake") and (
-                            datetime.now(timezone.utc).timestamp() - peer["latest_handshake"] < 120
+                            now.timestamp() - peer["latest_handshake"] < 180
                         ):
                             online_count += 1
                         break
 
             if dest.start_mode == "on_demand":
-                if online_count > 0 and not dest.is_running:
-                    # Users online, start the destination
-                    logger.info(f"On-demand: Starting '{dest.name}' ({online_count} users online)")
-                    _start_destination_internal(dest, db)
-                elif online_count == 0 and dest.is_running and not dest.manually_stopped:
-                    # No users online for 2 min, stop it
-                    logger.info(f"On-demand: Stopping '{dest.name}' (no users online)")
-                    _stop_destination_internal(dest, db)
+                if online_count > 0:
+                    # Users online → clear idle timer, start if needed
+                    if dest.idle_since is not None:
+                        dest.idle_since = None
+                        db.commit()
+                    if not dest.is_running:
+                        logger.info(f"On-demand: Starting '{dest.name}' ({online_count} users online)")
+                        _start_destination_internal(dest, db)
+                else:
+                    # No users online
+                    if dest.is_running and not dest.manually_stopped:
+                        if dest.idle_since is None:
+                            # Start idle timer
+                            dest.idle_since = now.replace(tzinfo=None)
+                            db.commit()
+                            logger.debug(f"On-demand: '{dest.name}' idle timer started")
+                        else:
+                            # Check if idle long enough
+                            idle_dt = dest.idle_since
+                            if idle_dt.tzinfo is None:
+                                idle_dt = idle_dt.replace(tzinfo=timezone.utc)
+                            if now - idle_dt >= IDLE_TIMEOUT:
+                                logger.info(f"On-demand: Stopping '{dest.name}' (idle for {IDLE_TIMEOUT})")
+                                _stop_destination_internal(dest, db)
+                                dest.idle_since = None
+                                db.commit()
 
             elif dest.start_mode == "auto_restart":
                 if not dest.is_running and not dest.manually_stopped:

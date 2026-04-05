@@ -21,6 +21,8 @@ class DestinationVPN(Base):
     # auto_restart (restart automatically if stopped unexpectedly)
     start_mode: Mapped[str] = mapped_column(String(20), default="manual")  # manual, on_demand, auto_restart
     manually_stopped: Mapped[bool] = mapped_column(Boolean, default=False)  # track manual vs unexpected stop
+    # Timestamp when all users went offline (for on_demand idle timer)
+    idle_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     routing_table: Mapped[int] = mapped_column(Integer, default=100)  # ip rule table number
     fwmark: Mapped[int] = mapped_column(Integer, default=100)  # iptables mark
 
