@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -19,7 +21,7 @@ class AlertResponse(BaseModel):
     type: str
     message: str
     channel: str | None
-    sent_at: str
+    sent_at: datetime
     acknowledged: bool
 
     model_config = {"from_attributes": True}
