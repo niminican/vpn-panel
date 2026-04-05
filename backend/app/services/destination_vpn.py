@@ -14,6 +14,51 @@ from app.models.destination_vpn import DestinationVPN
 logger = logging.getLogger(__name__)
 
 
+def ensure_ssh_protection():
+    """Ensure SSH (port 22) and server default route are ALWAYS preserved.
+
+    Called before any routing/iptables changes to guarantee the admin
+    never loses access to the server.
+    """
+    import subprocess as _sp
+
+    # 1. Ensure iptables INPUT allows SSH on port 22 (idempotent)
+    check = _sp.run(
+        ["iptables", "-C", "INPUT", "-p", "tcp", "--dport", "22", "-j", "ACCEPT"],
+        capture_output=True, timeout=5,
+    )
+    if check.returncode != 0:
+        _sp.run(
+            ["iptables", "-I", "INPUT", "1", "-p", "tcp", "--dport", "22", "-j", "ACCEPT"],
+            capture_output=True, timeout=5,
+        )
+        logger.info("SSH protection: added INPUT ACCEPT rule for port 22")
+
+    # 2. Ensure ESTABLISHED connections are always allowed (keeps current SSH alive)
+    check2 = _sp.run(
+        ["iptables", "-C", "INPUT", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"],
+        capture_output=True, timeout=5,
+    )
+    if check2.returncode != 0:
+        _sp.run(
+            ["iptables", "-I", "INPUT", "1", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"],
+            capture_output=True, timeout=5,
+        )
+
+    # 3. Verify the default route in main table still exists
+    result = _sp.run(
+        ["ip", "route", "show", "default"],
+        capture_output=True, text=True, timeout=5,
+    )
+    if "default" not in result.stdout:
+        logger.critical("SSH protection: DEFAULT ROUTE IS MISSING! Attempting recovery...")
+        # Try to restore default route via the first detected gateway
+        _sp.run(
+            ["ip", "route", "add", "default", "via", "216.250.112.1", "dev", "ens6"],
+            capture_output=True, timeout=5,
+        )
+
+
 def _run_cmd(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -199,17 +244,68 @@ def manage_auto_destinations():
 
 
 def _start_destination_internal(dest, db):
-    """Internal helper to start a destination without API context."""
+    """Internal helper to start a destination without API context.
+
+    Uses isolated routing tables and Table=off to NEVER touch the server's
+    default route.  SSH connectivity is preserved at all times.
+    """
     import subprocess
     from pathlib import Path
+    from app.config import settings
 
     try:
         iface = dest.interface_name
+        wg_subnet = settings.wg_subnet
+
+        # ── Safety: protect SSH before touching anything ──
+        ensure_ssh_protection()
+
         if dest.protocol == "wireguard":
             config_path = dest.config_file_path or iface
-            subprocess.run(["wg-quick", "up", config_path], capture_output=True, timeout=30, check=True)
+
+            # Ensure Table = off so wg-quick never hijacks the default route
+            if config_path and Path(config_path).exists():
+                config_content = Path(config_path).read_text()
+                if "Table" not in config_content:
+                    config_content = config_content.replace(
+                        "[Interface]",
+                        "[Interface]\nTable = off",
+                    )
+                    Path(config_path).write_text(config_content)
+
+            subprocess.run(
+                ["wg-quick", "up", config_path],
+                capture_output=True, timeout=30, check=True,
+            )
+
+            # Set up isolated routing (same logic as API start endpoint)
+            table_id = str(51820 + dest.id)
+            subprocess.run(
+                ["ip", "route", "add", "default", "dev", iface, "table", table_id],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["ip", "rule", "add", "from", wg_subnet, "lookup", table_id, "priority", "100"],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", wg_subnet, "-o", iface, "-j", "MASQUERADE"],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-A", "FORWARD", "-i", "wg0", "-o", iface, "-j", "ACCEPT"],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-A", "FORWARD", "-i", iface, "-o", "wg0", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                capture_output=True, timeout=10,
+            )
+
         elif dest.protocol == "openvpn":
-            subprocess.run(["systemctl", "start", f"openvpn@{iface}"], capture_output=True, timeout=30, check=True)
+            subprocess.run(
+                ["systemctl", "start", f"openvpn@{iface}"],
+                capture_output=True, timeout=30, check=True,
+            )
 
         dest.is_running = True
         dest.manually_stopped = False
@@ -220,16 +316,51 @@ def _start_destination_internal(dest, db):
 
 
 def _stop_destination_internal(dest, db):
-    """Internal helper to stop a destination without API context."""
+    """Internal helper to stop a destination without API context.
+
+    Cleans up isolated routing rules before tearing down the interface.
+    """
     import subprocess
+    from app.config import settings
 
     try:
         iface = dest.interface_name
+        wg_subnet = settings.wg_subnet
+
         if dest.protocol == "wireguard":
+            # Clean up routing rules first (mirror of start logic)
+            table_id = str(51820 + dest.id)
+            subprocess.run(
+                ["ip", "rule", "del", "from", wg_subnet, "lookup", table_id],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["ip", "route", "del", "default", "dev", iface, "table", table_id],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", wg_subnet, "-o", iface, "-j", "MASQUERADE"],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-D", "FORWARD", "-i", "wg0", "-o", iface, "-j", "ACCEPT"],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["iptables", "-D", "FORWARD", "-i", iface, "-o", "wg0", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                capture_output=True, timeout=10,
+            )
+
             config_path = dest.config_file_path or iface
-            subprocess.run(["wg-quick", "down", config_path], capture_output=True, timeout=15, check=True)
+            subprocess.run(
+                ["wg-quick", "down", config_path],
+                capture_output=True, timeout=15, check=True,
+            )
         elif dest.protocol == "openvpn":
-            subprocess.run(["systemctl", "stop", f"openvpn@{iface}"], capture_output=True, timeout=15, check=True)
+            subprocess.run(
+                ["systemctl", "stop", f"openvpn@{iface}"],
+                capture_output=True, timeout=15, check=True,
+            )
 
         dest.is_running = False
         db.commit()

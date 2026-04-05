@@ -49,6 +49,7 @@ def _dest_to_response(dest: DestinationVPN, db: Session) -> DestinationVPNRespon
         config_file_path=dest.config_file_path,
         enabled=dest.enabled,
         is_running=dest.is_running,
+        start_mode=dest.start_mode or "manual",
         user_count=len(users),
         total_upload=total_up,
         total_download=total_down,
@@ -309,6 +310,10 @@ def start_destination(
         pass
 
     try:
+        # ── Safety: protect SSH before touching routing ──
+        from app.services.destination_vpn import ensure_ssh_protection
+        ensure_ssh_protection()
+
         # Fix permissions on config file
         if config_path:
             import os
@@ -385,6 +390,10 @@ def stop_destination(
     wg_subnet = validate_ip_network(settings.wg_subnet)
 
     try:
+        # ── Safety: protect SSH before touching routing ──
+        from app.services.destination_vpn import ensure_ssh_protection
+        ensure_ssh_protection()
+
         if dest.protocol == "wireguard":
             table_id = str(51820 + dest.id)
 

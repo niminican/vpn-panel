@@ -58,6 +58,14 @@ def _create_default_admin():
 
 def _start_services():
     """Start background services: scheduler, connection logger, tc, telegram."""
+    # ── Safety first: ensure SSH is always protected ──
+    try:
+        from app.services.destination_vpn import ensure_ssh_protection
+        ensure_ssh_protection()
+        logger.info("SSH protection rules verified")
+    except Exception as e:
+        logger.warning(f"SSH protection setup failed: {e}")
+
     # Start scheduler (bandwidth polling, alerts, health checks)
     try:
         from app.services.scheduler import start_scheduler
