@@ -190,18 +190,19 @@ export default function Destinations() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Destination VPNs</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Destination VPNs</h1>
         <button
           onClick={() => {
             setShowForm(!showForm)
             setEditId(null)
             setForm({ name: '', protocol: 'auto', interface_name: '', config_text: '', start_mode: 'manual' })
           }}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 sm:px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 whitespace-nowrap"
         >
           <Plus className="h-4 w-4" />
-          Add Destination
+          <span className="hidden sm:inline">Add Destination</span>
+          <span className="sm:hidden">Add</span>
         </button>
       </div>
 
@@ -362,8 +363,8 @@ export default function Destinations() {
               key={dest.id}
               className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden"
             >
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-3">
+              <div className="p-3 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Globe className="h-5 w-5 text-blue-500" />
                     <h3 className="font-medium text-gray-900">{dest.name}</h3>
@@ -386,7 +387,7 @@ export default function Destinations() {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
                     {/* Inline Start Mode Selector */}
                     <select
                       value={dest.start_mode}
@@ -394,12 +395,12 @@ export default function Destinations() {
                       className={`rounded-lg border px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer ${startModeColor(dest.start_mode)}`}
                       title="Start Mode"
                     >
-                      <option value="manual">⚙ Manual</option>
-                      <option value="on_demand">⚡ On-Demand</option>
-                      <option value="auto_restart">🔄 Auto-Restart</option>
+                      <option value="manual">Manual</option>
+                      <option value="on_demand">On-Demand</option>
+                      <option value="auto_restart">Auto-Restart</option>
                     </select>
 
-                    <div className="w-px h-6 bg-gray-200 mx-0.5" />
+                    <div className="w-px h-6 bg-gray-200 mx-0.5 hidden sm:block" />
 
                     {dest.is_running ? (
                       <button
@@ -408,7 +409,7 @@ export default function Destinations() {
                         title="Stop"
                       >
                         <Square className="h-3.5 w-3.5" />
-                        Stop
+                        <span className="hidden sm:inline">Stop</span>
                       </button>
                     ) : (
                       <button
@@ -417,7 +418,7 @@ export default function Destinations() {
                         title="Start"
                       >
                         <Play className="h-3.5 w-3.5" />
-                        Start
+                        <span className="hidden sm:inline">Start</span>
                       </button>
                     )}
                     <button
@@ -437,7 +438,16 @@ export default function Destinations() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                {/* Start mode description */}
+                {dest.start_mode !== 'manual' && (
+                  <p className="text-xs text-gray-400 mt-1 ml-7">
+                    {dest.start_mode === 'on_demand'
+                      ? 'Starts automatically when a user connects. Stops after 2 min with no active users.'
+                      : 'Restarts automatically if it goes down unexpectedly. Will not restart if manually stopped.'}
+                  </p>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 text-sm">
                   <div>
                     <p className="text-gray-400 text-xs">Protocol</p>
                     <p className="font-medium capitalize">{dest.protocol}</p>

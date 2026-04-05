@@ -16,7 +16,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   }
 
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-white px-6">
+    <header className="flex h-14 sm:h-16 items-center justify-between border-b bg-white px-3 sm:px-6">
       <button
         onClick={onMenuToggle}
         className="rounded-lg p-2 hover:bg-gray-100"
@@ -29,7 +29,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
         className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
       >
         <LogOut className="h-4 w-4" />
-        Logout
+        <span className="hidden sm:inline">Logout</span>
       </button>
     </header>
   )

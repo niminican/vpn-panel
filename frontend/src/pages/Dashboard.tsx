@@ -57,15 +57,15 @@ function StatCard({
   }
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
-      <div className="flex items-center gap-3">
-        <div className={`rounded-lg p-2.5 ${colorMap[color]}`}>
-          <Icon className="h-5 w-5" />
+    <div className="rounded-xl bg-white p-3 sm:p-5 shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className={`rounded-lg p-2 sm:p-2.5 ${colorMap[color]}`}>
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
-        <div>
-          <p className="text-sm text-gray-500">{label}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        <div className="min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500 truncate">{label}</p>
+          <p className="text-lg sm:text-2xl font-bold text-gray-900">{value}</p>
+          {sub && <p className="text-xs text-gray-400 mt-0.5 truncate">{sub}</p>}
         </div>
       </div>
     </div>
@@ -121,7 +121,7 @@ export default function Dashboard() {
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard icon={Users} label="Total Users" value={data.total_users} sub={`${data.active_users} active`} />
         <StatCard icon={Wifi} label="Online Now" value={data.online_users} color="green" />
         <StatCard

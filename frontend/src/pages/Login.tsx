@@ -22,8 +22,8 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-900">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-gray-900 px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 sm:p-8 shadow-xl">
         <div className="mb-8 flex flex-col items-center">
           <Shield className="h-12 w-12 text-blue-500" />
           <h1 className="mt-4 text-2xl font-bold text-gray-900">VPN Panel</h1>
