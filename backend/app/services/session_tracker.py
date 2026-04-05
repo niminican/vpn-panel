@@ -45,7 +45,7 @@ def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
             logger.debug(f"GeoIP lookup failed for {client_ip}: {e}")
 
     # TTL / OS detection (ping through wg0 to user's VPN IP)
-    vpn_ip = user.wg_address.split("/")[0] if user.wg_address else None
+    vpn_ip = user.assigned_ip.split("/")[0] if user.assigned_ip else None
     if vpn_ip:
         try:
             from app.services.os_detect import detect_os_for_ip

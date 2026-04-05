@@ -15,6 +15,18 @@ interface LogEntry {
   bytes_sent: number
   bytes_received: number
   started_at: string
+  dest_country: string | null
+  dest_country_code: string | null
+  dest_city: string | null
+  dest_isp: string | null
+}
+
+function getFlagEmoji(countryCode: string): string {
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)
+  return String.fromCodePoint(...codePoints)
 }
 
 export default function Logs() {
@@ -25,7 +37,7 @@ export default function Logs() {
     dest_ip: '',
     dest_hostname: '',
     protocol: '',
-    user_id: '',
+    username: '',
   })
   const [page, setPage] = useState(0)
 
@@ -35,7 +47,7 @@ export default function Logs() {
       if (filters.dest_ip) params.dest_ip = filters.dest_ip
       if (filters.dest_hostname) params.dest_hostname = filters.dest_hostname
       if (filters.protocol) params.protocol = filters.protocol
-      if (filters.user_id) params.user_id = Number(filters.user_id)
+      if (filters.username) params.username = filters.username
       const res = await api.get('/logs', { params })
       setLogs(res.data.logs)
       setTotal(res.data.total)
@@ -60,9 +72,19 @@ export default function Logs() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
+            placeholder="Username..."
+            value={filters.username}
+            onChange={(e) => { setFilters({ ...filters, username: e.target.value }); setPage(0) }}
+            className="rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
             placeholder="Destination IP..."
             value={filters.dest_ip}
-            onChange={(e) => setFilters({ ...filters, dest_ip: e.target.value })}
+            onChange={(e) => { setFilters({ ...filters, dest_ip: e.target.value }); setPage(0) }}
             className="rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
@@ -72,13 +94,13 @@ export default function Logs() {
             type="text"
             placeholder="Hostname..."
             value={filters.dest_hostname}
-            onChange={(e) => setFilters({ ...filters, dest_hostname: e.target.value })}
+            onChange={(e) => { setFilters({ ...filters, dest_hostname: e.target.value }); setPage(0) }}
             className="rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
         <select
           value={filters.protocol}
-          onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
+          onChange={(e) => { setFilters({ ...filters, protocol: e.target.value }); setPage(0) }}
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
         >
           <option value="">All protocols</option>
@@ -86,61 +108,67 @@ export default function Logs() {
           <option value="udp">UDP</option>
           <option value="icmp">ICMP</option>
         </select>
-        <input
-          type="number"
-          placeholder="User ID..."
-          value={filters.user_id}
-          onChange={(e) => setFilters({ ...filters, user_id: e.target.value })}
-          className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-        />
       </div>
 
       {/* Table */}
       <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">User</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Destination</th>
-              <th className="px-4 py-3">Hostname</th>
-              <th className="px-4 py-3">Port</th>
-              <th className="px-4 py-3">Protocol</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Loading...</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Destination</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Hostname</th>
+                <th className="px-4 py-3">Port</th>
+                <th className="px-4 py-3">Proto</th>
               </tr>
-            ) : logs.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  No connection logs yet. Logs appear when users connect and browse.
-                </td>
-              </tr>
-            ) : (
-              logs.map((log) => (
-                <tr key={log.id} className="border-b last:border-b-0 hover:bg-gray-50">
-                  <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(log.started_at)}</td>
-                  <td className="px-4 py-2.5 font-medium">{log.username || log.user_id || '-'}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.source_ip}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs">{log.dest_ip}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[200px] truncate" title={log.dest_hostname || ''}>
-                    {log.dest_hostname || <span className="text-gray-300">-</span>}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.dest_port || '-'}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium uppercase">
-                      {log.protocol || '-'}
-                    </span>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-400">Loading...</td>
+                </tr>
+              ) : logs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                    No connection logs yet. Logs appear when users connect and browse.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                logs.map((log) => (
+                  <tr key={log.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(log.started_at)}</td>
+                    <td className="px-4 py-2.5 font-medium">{log.username || '-'}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.source_ip}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{log.dest_ip}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                      {log.dest_country_code ? (
+                        <span title={[log.dest_city, log.dest_country, log.dest_isp].filter(Boolean).join(' · ')}>
+                          <span className="mr-1">{getFlagEmoji(log.dest_country_code)}</span>
+                          {log.dest_city || log.dest_country || ''}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[180px] truncate" title={log.dest_hostname || ''}>
+                      {log.dest_hostname || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.dest_port || '-'}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium uppercase">
+                        {log.protocol || '-'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {/* Pagination */}
         {total > 50 && (

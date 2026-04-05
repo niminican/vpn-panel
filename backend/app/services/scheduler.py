@@ -54,7 +54,7 @@ def start_scheduler():
 
     # Destination VPN health
     scheduler.add_job(check_all_destinations, "interval", seconds=60, id="dest_health")
-    scheduler.add_job(manage_auto_destinations, "interval", seconds=30, id="auto_dest_mgmt")
+    scheduler.add_job(manage_auto_destinations, "interval", seconds=5, id="auto_dest_mgmt")
 
     # Session tracking
     scheduler.add_job(track_sessions, "interval", seconds=60, id="track_sessions")

@@ -304,17 +304,9 @@ def list_user_sessions(
         duration = None
         if s.disconnected_at and s.connected_at:
             duration = int((s.disconnected_at - s.connected_at).total_seconds())
-        result.append(UserSessionResponse(
-            id=s.id,
-            user_id=s.user_id,
-            endpoint=s.endpoint,
-            client_ip=s.client_ip,
-            connected_at=s.connected_at,
-            disconnected_at=s.disconnected_at,
-            bytes_sent=s.bytes_sent,
-            bytes_received=s.bytes_received,
-            duration_seconds=duration,
-        ))
+        resp = UserSessionResponse.model_validate(s)
+        resp.duration_seconds = duration
+        result.append(resp)
 
     return SessionListResponse(sessions=result, total=total)
 

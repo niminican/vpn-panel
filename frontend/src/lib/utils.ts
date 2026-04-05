@@ -15,7 +15,9 @@ export function formatBytes(bytes: number): string {
 
 export function formatDate(date: string | null): string {
   if (!date) return '-'
-  return new Date(date).toLocaleDateString('en-US', {
+  // Backend stores UTC without 'Z' suffix — append it so JS parses as UTC
+  const utcDate = date.endsWith('Z') || date.includes('+') ? date : date + 'Z'
+  return new Date(utcDate).toLocaleDateString('en-US', {
     timeZone: 'America/Toronto',
     year: 'numeric',
     month: 'short',

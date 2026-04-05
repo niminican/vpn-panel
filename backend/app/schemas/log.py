@@ -16,6 +16,12 @@ class ConnectionLogResponse(BaseModel):
     started_at: datetime
     ended_at: datetime | None
 
+    # GeoIP info for destination IP
+    dest_country: str | None = None
+    dest_country_code: str | None = None
+    dest_city: str | None = None
+    dest_isp: str | None = None
+
     model_config = {"from_attributes": True}
 
 
