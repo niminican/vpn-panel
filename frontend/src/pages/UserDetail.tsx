@@ -65,9 +65,24 @@ interface SessionEntry {
   bytes_sent: number
   bytes_received: number
   duration_seconds: number | null
+  country: string | null
+  country_code: string | null
+  city: string | null
+  isp: string | null
+  asn: number | null
+  os_hint: string | null
+  ttl: number | null
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function getFlagEmoji(countryCode: string): string {
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+  return String.fromCodePoint(...codePoints)
+}
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
@@ -685,49 +700,96 @@ export default function UserDetail() {
 
       {/* Sessions Tab */}
       {tab === 'sessions' && (
-        <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                <th className="px-4 py-3">Connected</th>
-                <th className="px-4 py-3">Disconnected</th>
-                <th className="px-4 py-3">Duration</th>
-                <th className="px-4 py-3">Download</th>
-                <th className="px-4 py-3">Upload</th>
-                <th className="px-4 py-3">Client IP</th>
-                <th className="px-4 py-3">Endpoint</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">No sessions recorded yet.</td>
-                </tr>
-              ) : (
-                sessions.map((s) => (
-                  <tr key={s.id} className="border-b last:border-b-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 text-xs text-gray-600">{formatDate(s.connected_at)}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600">
-                      {s.disconnected_at ? formatDate(s.disconnected_at) : (
-                        <span className="inline-flex items-center gap-1 text-green-600 font-medium">
-                          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" /> Connected
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs font-medium">
-                      {s.duration_seconds != null ? formatDuration(s.duration_seconds) : (
-                        <span className="text-green-600">Active</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs">{formatBytes(s.bytes_sent)}</td>
-                    <td className="px-4 py-2.5 text-xs">{formatBytes(s.bytes_received)}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.client_ip || '-'}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.endpoint || '-'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {sessions.length === 0 ? (
+            <div className="rounded-xl bg-white p-8 shadow-sm border border-gray-100 text-center text-gray-400">
+              No sessions recorded yet.
+            </div>
+          ) : (
+            sessions.map((s) => (
+              <div key={s.id} className="rounded-xl bg-white shadow-sm border border-gray-100 p-4">
+                {/* Session header: status + time */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {!s.disconnected_at ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-medium">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 text-gray-500 px-2.5 py-0.5 text-xs font-medium">
+                        {s.duration_seconds != null ? formatDuration(s.duration_seconds) : 'Ended'}
+                      </span>
+                    )}
+                    {s.os_hint && (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        s.os_hint.includes('Windows') ? 'bg-blue-100 text-blue-700' :
+                        s.os_hint.includes('Linux') || s.os_hint.includes('Android') ? 'bg-green-100 text-green-700' :
+                        'bg-purple-100 text-purple-700'
+                      }`}>
+                        {s.os_hint === 'Linux/Android/macOS' ? 'Linux/Android/Mac' : s.os_hint}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400">{formatDate(s.connected_at)}</span>
+                </div>
+
+                {/* Info grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+                  {/* Location */}
+                  {(s.country || s.city) && (
+                    <div>
+                      <p className="text-xs text-gray-400">Location</p>
+                      <p className="font-medium text-gray-700">
+                        {s.country_code && <span className="mr-1">{getFlagEmoji(s.country_code)}</span>}
+                        {[s.city, s.country].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  )}
+                  {/* ISP */}
+                  {s.isp && (
+                    <div>
+                      <p className="text-xs text-gray-400">ISP</p>
+                      <p className="font-medium text-gray-700 truncate" title={s.isp}>{s.isp}</p>
+                    </div>
+                  )}
+                  {/* Client IP */}
+                  <div>
+                    <p className="text-xs text-gray-400">Client IP</p>
+                    <p className="font-mono text-xs text-gray-600">{s.client_ip || '-'}</p>
+                  </div>
+                  {/* Endpoint */}
+                  <div>
+                    <p className="text-xs text-gray-400">Endpoint</p>
+                    <p className="font-mono text-xs text-gray-600 truncate" title={s.endpoint || ''}>{s.endpoint || '-'}</p>
+                  </div>
+                  {/* Download */}
+                  <div>
+                    <p className="text-xs text-gray-400">Download</p>
+                    <p className="font-medium text-green-600">{formatBytes(s.bytes_sent)}</p>
+                  </div>
+                  {/* Upload */}
+                  <div>
+                    <p className="text-xs text-gray-400">Upload</p>
+                    <p className="font-medium text-blue-600">{formatBytes(s.bytes_received)}</p>
+                  </div>
+                  {/* TTL */}
+                  {s.ttl != null && (
+                    <div>
+                      <p className="text-xs text-gray-400">TTL</p>
+                      <p className="font-mono text-xs text-gray-600">{s.ttl}</p>
+                    </div>
+                  )}
+                  {/* Disconnected */}
+                  {s.disconnected_at && (
+                    <div>
+                      <p className="text-xs text-gray-400">Disconnected</p>
+                      <p className="text-xs text-gray-600">{formatDate(s.disconnected_at)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
 
           {sessionsTotal > 50 && (
             <div className="flex items-center justify-between border-t px-4 py-3">

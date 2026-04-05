@@ -13,6 +13,17 @@ class UserSessionResponse(BaseModel):
     bytes_received: int
     duration_seconds: int | None = None
 
+    # GeoIP info
+    country: str | None = None
+    country_code: str | None = None
+    city: str | None = None
+    isp: str | None = None
+    asn: int | None = None
+
+    # OS detection
+    os_hint: str | None = None
+    ttl: int | None = None
+
     model_config = {"from_attributes": True}
 
 

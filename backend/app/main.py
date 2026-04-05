@@ -66,6 +66,13 @@ def _start_services():
     except Exception as e:
         logger.warning(f"SSH protection setup failed: {e}")
 
+    # Ensure GeoIP databases are available
+    try:
+        from app.services.geoip import ensure_databases
+        ensure_databases()
+    except Exception as e:
+        logger.warning(f"GeoIP setup failed (non-critical): {e}")
+
     # Start scheduler (bandwidth polling, alerts, health checks)
     try:
         from app.services.scheduler import start_scheduler

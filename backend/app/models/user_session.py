@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, BigInteger, DateTime, ForeignKey, Index
+from sqlalchemy import String, BigInteger, DateTime, ForeignKey, Index, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -21,3 +21,14 @@ class UserSession(Base):
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime)
     bytes_sent: Mapped[int] = mapped_column(BigInteger, default=0)  # server->client (download)
     bytes_received: Mapped[int] = mapped_column(BigInteger, default=0)  # client->server (upload)
+
+    # GeoIP info (resolved from client_ip)
+    country: Mapped[str | None] = mapped_column(String(100))   # e.g. "Iran"
+    country_code: Mapped[str | None] = mapped_column(String(5))  # e.g. "IR"
+    city: Mapped[str | None] = mapped_column(String(100))       # e.g. "Tehran"
+    isp: Mapped[str | None] = mapped_column(String(200))        # e.g. "Irancell"
+    asn: Mapped[int | None] = mapped_column(Integer)            # e.g. 44244
+
+    # OS detection (from TTL fingerprinting)
+    os_hint: Mapped[str | None] = mapped_column(String(50))     # e.g. "Windows", "Linux/Android", "macOS/iOS"
+    ttl: Mapped[int | None] = mapped_column(Integer)            # raw TTL value observed

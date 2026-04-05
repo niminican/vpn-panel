@@ -6,6 +6,10 @@ Called periodically by the scheduler (every 60s alongside bandwidth polling).
 
 A session starts when a peer has a recent handshake (< 3 min).
 A session ends when the handshake goes stale (> 3 min).
+
+Enriches sessions with:
+- GeoIP data (country, city, ISP) from the client's public IP
+- OS detection (TTL fingerprinting) from the client's VPN IP
 """
 import logging
 from datetime import datetime, timezone
@@ -23,6 +27,33 @@ _active_sessions: dict[str, int] = {}
 _session_transfer: dict[str, tuple[int, int]] = {}  # pubkey -> (rx, tx)
 
 HANDSHAKE_TIMEOUT = 180  # 3 minutes
+
+
+def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
+    """Add GeoIP and OS info to a new session."""
+    # GeoIP lookup
+    if client_ip:
+        try:
+            from app.services.geoip import lookup_ip
+            geo = lookup_ip(client_ip)
+            session.country = geo.get("country")
+            session.country_code = geo.get("country_code")
+            session.city = geo.get("city")
+            session.isp = geo.get("isp")
+            session.asn = geo.get("asn")
+        except Exception as e:
+            logger.debug(f"GeoIP lookup failed for {client_ip}: {e}")
+
+    # TTL / OS detection (ping through wg0 to user's VPN IP)
+    vpn_ip = user.wg_address.split("/")[0] if user.wg_address else None
+    if vpn_ip:
+        try:
+            from app.services.os_detect import detect_os_for_ip
+            ttl, os_hint = detect_os_for_ip(vpn_ip)
+            session.ttl = ttl
+            session.os_hint = os_hint
+        except Exception as e:
+            logger.debug(f"OS detection failed for {vpn_ip}: {e}")
 
 
 def track_sessions():
@@ -72,11 +103,18 @@ def track_sessions():
                         bytes_sent=0,
                         bytes_received=0,
                     )
+                    # Enrich with GeoIP + OS detection
+                    _enrich_session(session, client_ip, user)
+
                     db.add(session)
                     db.flush()
                     _active_sessions[pubkey] = session.id
                     _session_transfer[pubkey] = (current_rx, current_tx)
-                    logger.debug(f"Session started for {user.username} from {endpoint}")
+                    logger.debug(
+                        f"Session started for {user.username} from {endpoint} "
+                        f"[{session.country or '?'}, {session.city or '?'}, "
+                        f"{session.isp or '?'}, OS: {session.os_hint or '?'}]"
+                    )
                 else:
                     # Update existing session bandwidth
                     session_id = _active_sessions[pubkey]
@@ -91,6 +129,9 @@ def track_sessions():
                         if endpoint:
                             session.endpoint = endpoint
                             session.client_ip = client_ip
+                            # Update GeoIP if IP changed
+                            if client_ip and session.country is None:
+                                _enrich_session(session, client_ip, user)
                     _session_transfer[pubkey] = (current_rx, current_tx)
             else:
                 # Peer is inactive - close session if open
