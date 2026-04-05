@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 # Set test environment before importing app
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
-os.environ["ENCRYPTION_KEY"] = "dGVzdC1lbmNyeXB0aW9uLWtleS1mb3ItdGVzdGluZw=="  # valid base64 44 chars
+os.environ["ENCRYPTION_KEY"] = "VPUYje7xwgqKMhB6T5NMnvrtLG75ThsHeVcqLF-5Eog="  # valid Fernet key
 os.environ["ADMIN_USERNAME"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "testpass123"
 os.environ["DEMO_MODE"] = "true"
@@ -17,6 +17,7 @@ os.environ["WG_SERVER_IP"] = "127.0.0.1"
 from app.database import Base, get_db
 from app.main import app
 from app.core.security import hash_password
+from app.core.rate_limiter import login_limiter
 from app.models.admin import Admin
 
 
@@ -39,8 +40,11 @@ app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture(autouse=True)
 def setup_database():
-    """Create tables before each test, drop after."""
+    """Create tables before each test, drop after. Reset rate limiter."""
     Base.metadata.create_all(bind=engine)
+    # Reset rate limiter state so tests don't interfere with each other
+    login_limiter._attempts.clear()
+    login_limiter._lockouts.clear()
     yield
     Base.metadata.drop_all(bind=engine)
 
