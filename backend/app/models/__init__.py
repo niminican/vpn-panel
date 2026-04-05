@@ -4,6 +4,7 @@ from app.models.destination_vpn import DestinationVPN
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.models.whitelist import UserWhitelist
+from app.models.blacklist import UserBlacklist
 from app.models.schedule import UserSchedule
 from app.models.connection_log import ConnectionLog
 from app.models.bandwidth import BandwidthHistory
@@ -19,6 +20,7 @@ __all__ = [
     "User",
     "UserSession",
     "UserWhitelist",
+    "UserBlacklist",
     "UserSchedule",
     "ConnectionLog",
     "BandwidthHistory",
