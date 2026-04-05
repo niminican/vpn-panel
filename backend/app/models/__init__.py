@@ -12,6 +12,7 @@ from app.models.active_session import ActiveSession
 from app.models.package import Package
 from app.models.setting import Setting
 from app.models.alert import Alert
+from app.models.blocked_request import BlockedRequest
 
 __all__ = [
     "Admin",
@@ -28,4 +29,5 @@ __all__ = [
     "Package",
     "Setting",
     "Alert",
+    "BlockedRequest",
 ]

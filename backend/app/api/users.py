@@ -15,7 +15,12 @@ from app.services import wireguard
 from app.services.qr_generator import generate_qr_base64
 from app.services.audit_logger import log_action
 from app.models.user_session import UserSession
+from app.models.connection_log import ConnectionLog
+from app.models.blocked_request import BlockedRequest
 from app.schemas.session import UserSessionResponse, SessionListResponse
+from app.schemas.visited import VisitedDestination, VisitedListResponse
+from app.schemas.blocked_request import BlockedRequestResponse, BlockedRequestListResponse
+from sqlalchemy import func
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -309,6 +314,94 @@ def list_user_sessions(
         result.append(resp)
 
     return SessionListResponse(sessions=result, total=total)
+
+
+@router.get("/{user_id}/sessions/{session_id}/visited", response_model=VisitedListResponse)
+def list_session_visited(
+    user_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    _admin: Admin = Depends(require_permission("users.view")),
+):
+    """List visited destinations during a specific session."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundError("User")
+    session_obj = db.query(UserSession).filter(
+        UserSession.id == session_id, UserSession.user_id == user_id
+    ).first()
+    if not session_obj:
+        raise NotFoundError("Session")
+
+    query = db.query(
+        ConnectionLog.dest_ip,
+        ConnectionLog.dest_hostname,
+        func.count().label("count"),
+        func.max(ConnectionLog.started_at).label("last_seen"),
+    ).filter(
+        ConnectionLog.user_id == user_id,
+        ConnectionLog.started_at >= session_obj.connected_at,
+    )
+    if session_obj.disconnected_at:
+        query = query.filter(ConnectionLog.started_at <= session_obj.disconnected_at)
+
+    rows = query.group_by(
+        ConnectionLog.dest_ip, ConnectionLog.dest_hostname
+    ).order_by(func.count().desc()).limit(200).all()
+
+    # Deduplicate by hostname
+    merged: dict[str, dict] = {}
+    for row in rows:
+        key = row.dest_hostname or row.dest_ip
+        if key in merged:
+            merged[key]["count"] += row.count
+            if row.last_seen > merged[key]["last_seen"]:
+                merged[key]["last_seen"] = row.last_seen
+        else:
+            merged[key] = {
+                "dest_ip": row.dest_ip,
+                "dest_hostname": row.dest_hostname,
+                "count": row.count,
+                "last_seen": row.last_seen,
+            }
+
+    visited = sorted(merged.values(), key=lambda x: x["count"], reverse=True)
+    return VisitedListResponse(
+        visited=[VisitedDestination(**v) for v in visited],
+        total=len(visited),
+    )
+
+
+@router.get("/{user_id}/sessions/{session_id}/blocked", response_model=BlockedRequestListResponse)
+def list_session_blocked(
+    user_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    _admin: Admin = Depends(require_permission("users.view")),
+):
+    """List blocked requests during a specific session."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundError("User")
+    session_obj = db.query(UserSession).filter(
+        UserSession.id == session_id, UserSession.user_id == user_id
+    ).first()
+    if not session_obj:
+        raise NotFoundError("Session")
+
+    query = db.query(BlockedRequest).filter(
+        BlockedRequest.user_id == user_id,
+        BlockedRequest.first_seen >= session_obj.connected_at,
+    )
+    if session_obj.disconnected_at:
+        query = query.filter(BlockedRequest.first_seen <= session_obj.disconnected_at)
+
+    blocked = query.order_by(BlockedRequest.count.desc()).limit(200).all()
+
+    return BlockedRequestListResponse(
+        blocked=[BlockedRequestResponse.model_validate(b) for b in blocked],
+        total=len(blocked),
+    )
 
 
 @router.put("/{user_id}/config", response_model=UserConfigResponse)

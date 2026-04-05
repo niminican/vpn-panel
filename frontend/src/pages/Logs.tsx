@@ -63,11 +63,11 @@ export default function Logs() {
   }, [page, filters])
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Connection Logs ({total})</h1>
+    <div className="space-y-3 sm:space-y-6">
+      <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Connection Logs ({total})</h1>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-2 sm:gap-3 flex-wrap">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
@@ -116,14 +116,14 @@ export default function Logs() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                <th className="px-4 py-3">Time</th>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Source</th>
-                <th className="px-4 py-3">Destination</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Hostname</th>
-                <th className="px-4 py-3">Port</th>
-                <th className="px-4 py-3">Proto</th>
+                <th className="px-2 sm:px-4 py-3">Time</th>
+                <th className="px-2 sm:px-4 py-3">User</th>
+                <th className="px-2 sm:px-4 py-3 hidden sm:table-cell">Source</th>
+                <th className="px-2 sm:px-4 py-3">Destination</th>
+                <th className="px-2 sm:px-4 py-3 hidden md:table-cell">Location</th>
+                <th className="px-2 sm:px-4 py-3 hidden lg:table-cell">Hostname</th>
+                <th className="px-2 sm:px-4 py-3 hidden sm:table-cell">Port</th>
+                <th className="px-2 sm:px-4 py-3 hidden sm:table-cell">Proto</th>
               </tr>
             </thead>
             <tbody>
@@ -140,11 +140,11 @@ export default function Logs() {
               ) : (
                 logs.map((log) => (
                   <tr key={log.id} className="border-b last:border-b-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(log.started_at)}</td>
-                    <td className="px-4 py-2.5 font-medium">{log.username || '-'}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.source_ip}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{log.dest_ip}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                    <td className="px-2 sm:px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(log.started_at)}</td>
+                    <td className="px-2 sm:px-4 py-2.5 font-medium">{log.username || '-'}</td>
+                    <td className="px-2 sm:px-4 py-2.5 font-mono text-xs text-gray-500 hidden sm:table-cell">{log.source_ip}</td>
+                    <td className="px-2 sm:px-4 py-2.5 font-mono text-xs">{log.dest_ip}</td>
+                    <td className="px-2 sm:px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap hidden md:table-cell">
                       {log.dest_country_code ? (
                         <span title={[log.dest_city, log.dest_country, log.dest_isp].filter(Boolean).join(' · ')}>
                           <span className="mr-1">{getFlagEmoji(log.dest_country_code)}</span>
@@ -154,11 +154,11 @@ export default function Logs() {
                         <span className="text-gray-300">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[180px] truncate" title={log.dest_hostname || ''}>
+                    <td className="px-2 sm:px-4 py-2.5 text-xs text-gray-600 max-w-[180px] truncate hidden lg:table-cell" title={log.dest_hostname || ''}>
                       {log.dest_hostname || <span className="text-gray-300">-</span>}
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{log.dest_port || '-'}</td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-2 sm:px-4 py-2.5 font-mono text-xs text-gray-500 hidden sm:table-cell">{log.dest_port || '-'}</td>
+                    <td className="px-2 sm:px-4 py-2.5 hidden sm:table-cell">
                       <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium uppercase">
                         {log.protocol || '-'}
                       </span>

@@ -24,11 +24,20 @@ from app.core.validators import (
     validate_day,
     validate_time,
     validate_address,
+    resolve_all_ips,
 )
 
 logger = logging.getLogger(__name__)
 
 WG_IFACE = validate_interface(settings.wg_interface)
+
+# IP → domain mapping populated during whitelist/blacklist setup
+# Used by connection_logger to resolve hostnames without DNS sniffer
+_ip_domain_map: dict[str, str] = {}
+
+def get_ip_domain_map() -> dict[str, str]:
+    """Get the IP→domain mapping (used by connection_logger)."""
+    return _ip_domain_map
 
 
 def _run(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
@@ -53,67 +62,114 @@ def _chain_exists(chain: str) -> bool:
 
 # ─── Whitelist ───────────────────────────────────────────────
 
-def setup_user_whitelist(user_id: int, user_ip: str, entries: list[dict]):
+def setup_user_whitelist(user_id: int, user_ip: str, entries: list[dict], has_blacklist_wildcard: bool = False):
     """Create per-user iptables chain with whitelist rules.
 
-    entries: list of {"address": str, "port": int|None, "protocol": str}
+    Pre-resolves all DNS (slow part) before touching iptables,
+    then flush-and-rebuild chain in-place (fast, milliseconds).
     """
     chain = _chain_name(user_id)
     ip_addr = validate_ip(user_ip.split("/")[0])
 
-    # Remove existing chain
-    remove_user_whitelist(user_id, user_ip)
-
     if not entries:
+        remove_user_whitelist(user_id, user_ip)
         return
 
-    # Create chain
-    validate_chain_name(chain)
-    _run(["iptables", "-N", chain])
-
-    # Add whitelist entries
+    # ── Phase 1: Pre-resolve all DNS (slow, but no iptables touched) ──
+    resolved_entries = []
     for entry in entries:
-        cmd = ["iptables", "-A", chain]
-        if entry.get("protocol") and entry["protocol"] != "any":
-            proto = validate_protocol(entry["protocol"])
-            cmd.extend(["-p", proto])
-        dest = validate_address(entry["address"])
-        cmd.extend(["-d", dest])
-        if entry.get("port"):
-            proto = entry.get("protocol", "tcp")
-            if proto == "any":
-                proto = "tcp"
-            proto = validate_protocol(proto)
-            port = validate_port(int(entry["port"]))
-            cmd.extend(["-p", proto, "--dport", str(port)])
-        cmd.extend(["-j", "ACCEPT"])
-        _run(cmd)
+        all_ips = resolve_all_ips(entry["address"])
+        if not all_ips:
+            try:
+                all_ips = [validate_address(entry["address"])]
+            except Exception:
+                logger.warning(f"Cannot resolve whitelist address: {entry['address']}")
+                continue
+        # Store IP→domain mapping for hostname resolution
+        for ip in all_ips:
+            _ip_domain_map[ip] = entry["address"]
+        resolved_entries.append({
+            "ips": all_ips,
+            "port": entry.get("port"),
+            "protocol": entry.get("protocol"),
+        })
 
-    # Allow established/related connections back
+    if not resolved_entries:
+        logger.warning(f"No resolvable whitelist entries for user {user_id}")
+        return
+
+    # ── Phase 2: Fast iptables rebuild (no DNS delays) ──
+    # Clean up any leftover temp chains from previous failed attempts
+    temp_chain = f"{chain}_new"
+    if _chain_exists(temp_chain):
+        _run(["iptables", "-F", temp_chain], check=False)
+        _run(["iptables", "-X", temp_chain], check=False)
+
+    # Create or flush chain
+    if _chain_exists(chain):
+        _run(["iptables", "-F", chain])
+    else:
+        validate_chain_name(chain)
+        rc, _, err = _run(["iptables", "-N", chain])
+        if rc != 0:
+            logger.error(f"Failed to create chain {chain}: {err}")
+            return
+
+    # Ensure FORWARD jump exists (use -C to check)
+    rc, _, _ = _run(["iptables", "-C", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain], check=False)
+    if rc != 0:
+        _run(["iptables", "-I", "FORWARD", "1", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain])
+
+    # Build chain rules (all fast - DNS already resolved)
     _run(["iptables", "-A", chain, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"])
+    _run(["iptables", "-A", chain, "-p", "udp", "--dport", "53", "-j", "ACCEPT"])
+    _run(["iptables", "-A", chain, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])
 
-    # Default DROP (deny everything not whitelisted)
+    log_prefix = f"wl_visit:{int(user_id)}: "
+    for re_entry in resolved_entries:
+        for dest_ip in re_entry["ips"]:
+            match_args = []
+            if re_entry.get("protocol") and re_entry["protocol"] != "any":
+                proto = validate_protocol(re_entry["protocol"])
+                match_args.extend(["-p", proto])
+            match_args.extend(["-d", dest_ip])
+            if re_entry.get("port"):
+                proto = re_entry.get("protocol", "tcp")
+                if proto == "any":
+                    proto = "tcp"
+                proto = validate_protocol(proto)
+                port = validate_port(int(re_entry["port"]))
+                match_args.extend(["-p", proto, "--dport", str(port)])
+
+            _run(["iptables", "-A", chain] + match_args + [
+                "-m", "conntrack", "--ctstate", "NEW",
+                "-j", "LOG", "--log-prefix", log_prefix, "--log-level", "4"])
+            _run(["iptables", "-A", chain] + match_args + ["-j", "ACCEPT"])
+
+    if has_blacklist_wildcard:
+        _run(["iptables", "-A", chain, "-m", "limit", "--limit", "10/sec", "--limit-burst", "50",
+              "-j", "LOG", "--log-prefix", f"bl_drop:{user_id}: ", "--log-level", "4"])
+
     _run(["iptables", "-A", chain, "-j", "DROP"])
 
-    # Jump to user chain from FORWARD
-    _run(["iptables", "-I", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain])
-
-    logger.info(f"Set up whitelist for user {user_id} with {len(entries)} entries")
+    logger.info(f"Set up whitelist for user {user_id} with {len(resolved_entries)} entries (bl_wildcard={has_blacklist_wildcard})")
 
 
 def remove_user_whitelist(user_id: int, user_ip: str):
-    """Remove per-user whitelist chain."""
+    """Remove per-user whitelist chain (and any temp chain)."""
     chain = _chain_name(user_id)
     ip_addr = validate_ip(user_ip.split("/")[0])
 
-    if not _chain_exists(chain):
-        return
-
-    # Remove jump rule
-    _run(["iptables", "-D", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain], check=False)
-    # Flush and delete chain
-    _run(["iptables", "-F", chain], check=False)
-    _run(["iptables", "-X", chain], check=False)
+    for ch in [chain, f"{chain}_new"]:
+        # Remove ALL FORWARD jumps to this chain
+        for _ in range(20):
+            rc, _, _ = _run(["iptables", "-D", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", ch], check=False)
+            if rc != 0:
+                break
+        # Flush and delete chain if it exists
+        if _chain_exists(ch):
+            _run(["iptables", "-F", ch], check=False)
+            _run(["iptables", "-X", ch], check=False)
 
     logger.info(f"Removed whitelist for user {user_id}")
 
@@ -123,85 +179,131 @@ def remove_user_whitelist(user_id: int, user_ip: str):
 def setup_user_blacklist(user_id: int, user_ip: str, bl_entries: list[dict], wl_entries: list[dict] | None = None):
     """Create per-user blacklist chain.
 
-    If address is '*', block ALL traffic except whitelist entries.
-    Otherwise block specific addresses.
-    wl_entries are used when '*' is in blacklist to allow exceptions.
+    Pre-resolves all DNS first, then flush-and-rebuild chain in-place.
     """
     chain = f"vpn_bl_{int(user_id)}"
     ip_addr = validate_ip(user_ip.split("/")[0])
 
-    # Remove existing blacklist chain
-    remove_user_blacklist(user_id, user_ip)
-
     if not bl_entries:
+        remove_user_blacklist(user_id, user_ip)
         return
 
-    # Create chain
-    validate_chain_name(chain)
-    _run(["iptables", "-N", chain])
+    has_wildcard = any(e["address"] == "*" for e in bl_entries)
+
+    # ── Phase 1: Pre-resolve all DNS (slow, no iptables touched) ──
+    resolved_bl = []
+    for entry in bl_entries:
+        if entry["address"] == "*":
+            resolved_bl.append({"ips": ["*"], "port": entry.get("port"), "protocol": entry.get("protocol")})
+            continue
+        all_ips = resolve_all_ips(entry["address"])
+        if not all_ips:
+            try:
+                all_ips = [validate_address(entry["address"])]
+            except Exception:
+                logger.warning(f"Cannot resolve blacklist address: {entry['address']}")
+                continue
+        for ip in all_ips:
+            _ip_domain_map[ip] = entry["address"]
+        resolved_bl.append({"ips": all_ips, "port": entry.get("port"), "protocol": entry.get("protocol")})
+
+    resolved_wl = []
+    if wl_entries:
+        for entry in wl_entries:
+            all_ips = resolve_all_ips(entry["address"])
+            if not all_ips:
+                try:
+                    all_ips = [validate_address(entry["address"])]
+                except Exception:
+                    continue
+            for ip in all_ips:
+                _ip_domain_map[ip] = entry["address"]
+            resolved_wl.append({"ips": all_ips, "port": entry.get("port"), "protocol": entry.get("protocol")})
+
+    # ── Phase 2: Fast iptables rebuild ──
+    # Clean up any leftover temp chains
+    temp_chain = f"{chain}_new"
+    if _chain_exists(temp_chain):
+        _run(["iptables", "-F", temp_chain], check=False)
+        _run(["iptables", "-X", temp_chain], check=False)
+
+    # Create or flush chain
+    if _chain_exists(chain):
+        _run(["iptables", "-F", chain])
+    else:
+        validate_chain_name(chain)
+        rc, _, err = _run(["iptables", "-N", chain])
+        if rc != 0:
+            logger.error(f"Failed to create chain {chain}: {err}")
+            return
+
+    # Ensure FORWARD jump exists
+    rc, _, _ = _run(["iptables", "-C", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain], check=False)
+    if rc != 0:
+        _run(["iptables", "-I", "FORWARD", "1", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain])
 
     # Allow established/related first
     _run(["iptables", "-A", chain, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"])
 
-    has_wildcard = any(e["address"] == "*" for e in bl_entries)
-
     if has_wildcard:
-        # Block ALL except whitelist: whitelist entries -> ACCEPT, then DROP all
-        if wl_entries:
-            for entry in wl_entries:
+        _run(["iptables", "-A", chain, "-p", "udp", "--dport", "53", "-j", "ACCEPT"])
+        _run(["iptables", "-A", chain, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])
+        if resolved_wl:
+            for re_entry in resolved_wl:
+                for dest_ip in re_entry["ips"]:
+                    cmd = ["iptables", "-A", chain]
+                    if re_entry.get("protocol") and re_entry["protocol"] != "any":
+                        proto = validate_protocol(re_entry["protocol"])
+                        cmd.extend(["-p", proto])
+                    cmd.extend(["-d", dest_ip])
+                    if re_entry.get("port"):
+                        proto = re_entry.get("protocol", "tcp")
+                        if proto == "any":
+                            proto = "tcp"
+                        proto = validate_protocol(proto)
+                        port = validate_port(int(re_entry["port"]))
+                        cmd.extend(["-p", proto, "--dport", str(port)])
+                    cmd.extend(["-j", "ACCEPT"])
+                    _run(cmd)
+        _run(["iptables", "-A", chain, "-m", "limit", "--limit", "10/sec", "--limit-burst", "50",
+              "-j", "LOG", "--log-prefix", f"bl_drop:{user_id}: ", "--log-level", "4"])
+        _run(["iptables", "-A", chain, "-j", "DROP"])
+    else:
+        for re_entry in resolved_bl:
+            for dest_ip in re_entry["ips"]:
                 cmd = ["iptables", "-A", chain]
-                if entry.get("protocol") and entry["protocol"] != "any":
-                    proto = validate_protocol(entry["protocol"])
+                if re_entry.get("protocol") and re_entry["protocol"] != "any":
+                    proto = validate_protocol(re_entry["protocol"])
                     cmd.extend(["-p", proto])
-                dest = validate_address(entry["address"])
-                cmd.extend(["-d", dest])
-                if entry.get("port"):
-                    proto = entry.get("protocol", "tcp")
+                cmd.extend(["-d", dest_ip])
+                if re_entry.get("port"):
+                    proto = re_entry.get("protocol", "tcp")
                     if proto == "any":
                         proto = "tcp"
                     proto = validate_protocol(proto)
-                    port = validate_port(int(entry["port"]))
+                    port = validate_port(int(re_entry["port"]))
                     cmd.extend(["-p", proto, "--dport", str(port)])
-                cmd.extend(["-j", "ACCEPT"])
+                cmd.extend(["-j", "DROP"])
                 _run(cmd)
-        # DROP everything else
-        _run(["iptables", "-A", chain, "-j", "DROP"])
-    else:
-        # Block specific addresses
-        for entry in bl_entries:
-            cmd = ["iptables", "-A", chain]
-            if entry.get("protocol") and entry["protocol"] != "any":
-                proto = validate_protocol(entry["protocol"])
-                cmd.extend(["-p", proto])
-            dest = validate_address(entry["address"])
-            cmd.extend(["-d", dest])
-            if entry.get("port"):
-                proto = entry.get("protocol", "tcp")
-                if proto == "any":
-                    proto = "tcp"
-                proto = validate_protocol(proto)
-                port = validate_port(int(entry["port"]))
-                cmd.extend(["-p", proto, "--dport", str(port)])
-            cmd.extend(["-j", "DROP"])
-            _run(cmd)
-
-    # Jump to blacklist chain from FORWARD
-    _run(["iptables", "-I", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain])
 
     logger.info(f"Set up blacklist for user {user_id} with {len(bl_entries)} entries (wildcard={'yes' if has_wildcard else 'no'})")
 
 
 def remove_user_blacklist(user_id: int, user_ip: str):
-    """Remove per-user blacklist chain."""
+    """Remove per-user blacklist chain (and any temp chain)."""
     chain = f"vpn_bl_{int(user_id)}"
     ip_addr = validate_ip(user_ip.split("/")[0])
 
-    if not _chain_exists(chain):
-        return
-
-    _run(["iptables", "-D", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", chain], check=False)
-    _run(["iptables", "-F", chain], check=False)
-    _run(["iptables", "-X", chain], check=False)
+    for ch in [chain, f"{chain}_new"]:
+        # Remove ALL FORWARD jumps to this chain
+        for _ in range(20):
+            rc, _, _ = _run(["iptables", "-D", "FORWARD", "-i", WG_IFACE, "-s", f"{ip_addr}/32", "-j", ch], check=False)
+            if rc != 0:
+                break
+        # Flush and delete chain if it exists
+        if _chain_exists(ch):
+            _run(["iptables", "-F", ch], check=False)
+            _run(["iptables", "-X", ch], check=False)
 
     logger.info(f"Removed blacklist for user {user_id}")
 
@@ -393,9 +495,33 @@ def setup_default_route(table: int, dest_interface: str):
 # ─── Init / Cleanup ─────────────────────────────────────────
 
 def initialize_logging_for_all(db_session):
-    """Enable connection logging for all enabled users."""
+    """Enable FORWARD chain connection logging for users WITHOUT firewall chains.
+
+    Users with whitelist/blacklist chains already have wl_visit/bl_drop LOGs
+    inside their chain — no need for the FORWARD LOG (which would double-count).
+    """
     from app.models.user import User
+    from app.models.whitelist import UserWhitelist
+    from app.models.blacklist import UserBlacklist
+
     users = db_session.query(User).filter(User.enabled == True).all()  # noqa: E712
+
+    # Find users that have whitelist or blacklist entries
+    wl_user_ids = {r[0] for r in db_session.query(UserWhitelist.user_id).distinct().all()}
+    bl_user_ids = {r[0] for r in db_session.query(UserBlacklist.user_id).distinct().all()}
+    firewall_user_ids = wl_user_ids | bl_user_ids
+
+    enabled_count = 0
+    skipped_count = 0
     for user in users:
-        enable_connection_logging(user.id, user.assigned_ip)
-    logger.info(f"Enabled logging for {len(users)} users")
+        if user.id in firewall_user_ids:
+            # User has firewall chains with built-in wl_visit/bl_drop LOGs
+            # Remove any existing FORWARD LOG to avoid double-counting
+            disable_connection_logging(user.id, user.assigned_ip)
+            skipped_count += 1
+        else:
+            # No firewall chain — use FORWARD LOG for general connection logging
+            enable_connection_logging(user.id, user.assigned_ip)
+            enabled_count += 1
+
+    logger.info(f"Connection logging: {enabled_count} enabled, {skipped_count} skipped (have firewall chains)")

@@ -33,6 +33,111 @@ _VALID_DAYS = {'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'}
 _TIME_RE = re.compile(r'^\d{2}:\d{2}(:\d{2})?$')
 
 
+def _resolve_domain(domain: str) -> str | None:
+    """Resolve domain to a single IP address.
+
+    Uses _resolve_domain_all and returns first result.
+    """
+    results = _resolve_domain_all(domain)
+    return results[0] if results else None
+
+
+def _resolve_domain_all(domain: str) -> list[str]:
+    """Resolve a domain name to ALL A record IPs.
+
+    Uses `dig` command (most reliable), falls back to direct UDP DNS query.
+    """
+    import subprocess
+
+    # 1) Try dig command (most reliable, handles CNAME chains properly)
+    for server in ["8.8.8.8", "1.1.1.1"]:
+        try:
+            result = subprocess.run(
+                ["dig", "+short", domain, f"@{server}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                ips = []
+                for line in result.stdout.strip().split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # dig may return CNAME lines - skip non-IP lines
+                    try:
+                        ipaddress.ip_address(line)
+                        ips.append(line)
+                    except ValueError:
+                        continue
+                if ips:
+                    return ips
+        except Exception:
+            continue
+
+    # 2) Fallback: direct UDP DNS query
+    import struct
+    dns_servers = ["8.8.8.8", "1.1.1.1"]
+
+    def _build_query(domain: str) -> bytes:
+        import random
+        txid = random.randint(0, 65535)
+        header = struct.pack(">HHHHHH", txid, 0x0100, 1, 0, 0, 0)
+        qname = b""
+        for part in domain.split("."):
+            qname += struct.pack("B", len(part)) + part.encode()
+        qname += b"\x00"
+        question = qname + struct.pack(">HH", 1, 1)
+        return header + question
+
+    def _parse_response(data: bytes) -> list[str]:
+        results = []
+        if len(data) < 12:
+            return results
+        qdcount = struct.unpack(">H", data[4:6])[0]
+        idx = 12
+        for _ in range(qdcount):
+            while idx < len(data) and data[idx] != 0:
+                if data[idx] & 0xC0 == 0xC0:
+                    idx += 2
+                    break
+                idx += data[idx] + 1
+            else:
+                idx += 1
+            idx += 4
+        ancount = struct.unpack(">H", data[6:8])[0]
+        for _ in range(ancount):
+            if idx >= len(data):
+                break
+            if data[idx] & 0xC0 == 0xC0:
+                idx += 2
+            else:
+                while idx < len(data) and data[idx] != 0:
+                    idx += data[idx] + 1
+                idx += 1
+            if idx + 10 > len(data):
+                break
+            rtype, rclass, _, rdlength = struct.unpack(">HHIH", data[idx:idx + 10])
+            idx += 10
+            if rtype == 1 and rclass == 1 and rdlength == 4:
+                results.append(socket.inet_ntoa(data[idx:idx + 4]))
+            idx += rdlength
+        return results
+
+    for server in dns_servers:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(3)
+            sock.sendto(_build_query(domain), (server, 53))
+            data, _ = sock.recvfrom(1024)
+            sock.close()
+            results = _parse_response(data)
+            if results:
+                return results
+        except Exception:
+            continue
+
+    return []
+
+
 def validate_ip(ip: str) -> str:
     """Validate and return a clean IP address (with optional /mask)."""
     ip = ip.strip()
@@ -129,9 +234,59 @@ def validate_wg_key(key: str) -> str:
     return key
 
 
-def validate_address(addr: str) -> str:
-    """Validate a destination address (IP or CIDR)."""
+def resolve_all_ips(addr: str) -> list[str]:
+    """Resolve a domain to ALL its IP addresses.
+
+    Returns list of IPs. For IP/CIDR input, returns single-element list.
+    """
     addr = addr.strip()
+    for prefix in ("https://", "http://"):
+        if addr.lower().startswith(prefix):
+            addr = addr[len(prefix):]
+    addr = addr.split("/")[0] if "/" in addr and not _is_cidr(addr) else addr
+
+    # IP or CIDR - return as-is
+    try:
+        if '/' in addr:
+            ipaddress.ip_network(addr, strict=False)
+        else:
+            ipaddress.ip_address(addr)
+        return [addr]
+    except ValueError:
+        pass
+
+    # Domain - resolve all IPs using direct DNS queries
+    _DOMAIN_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$')
+    if not _DOMAIN_RE.match(addr):
+        return []
+    # Use direct DNS queries to get all A records
+    results = _resolve_domain_all(addr)
+    if results:
+        return results
+    # Fallback to single resolve
+    resolved = _resolve_domain(addr)
+    return [resolved] if resolved else []
+
+
+def validate_address(addr: str) -> str:
+    """Validate a destination address (IP, CIDR, or domain name).
+
+    Accepts:
+      - IP addresses: 1.2.3.4
+      - CIDR: 1.2.3.0/24
+      - Domain names: example.com (resolved to IP via DNS)
+      - URLs: http://example.com or https://example.com (prefix stripped)
+    """
+    addr = addr.strip()
+
+    # Strip URL scheme if present
+    for prefix in ("https://", "http://"):
+        if addr.lower().startswith(prefix):
+            addr = addr[len(prefix):]
+    # Strip trailing path/slash
+    addr = addr.split("/")[0] if "/" in addr and not _is_cidr(addr) else addr
+
+    # Try as IP or CIDR first
     try:
         if '/' in addr:
             ipaddress.ip_network(addr, strict=False)
@@ -139,4 +294,22 @@ def validate_address(addr: str) -> str:
             ipaddress.ip_address(addr)
         return addr
     except ValueError:
-        raise ValueError(f"Invalid address: {addr}")
+        pass
+
+    # Try as domain name — resolve to IP using direct DNS query
+    _DOMAIN_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$')
+    if not _DOMAIN_RE.match(addr):
+        raise ValueError(f"Invalid address or domain: {addr}")
+    resolved = _resolve_domain(addr)
+    if resolved:
+        return resolved
+    raise ValueError(f"Cannot resolve domain: {addr}")
+
+
+def _is_cidr(addr: str) -> bool:
+    """Check if address looks like CIDR notation."""
+    try:
+        ipaddress.ip_network(addr, strict=False)
+        return True
+    except ValueError:
+        return False

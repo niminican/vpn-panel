@@ -210,7 +210,7 @@ export default function Destinations() {
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="rounded-xl bg-white p-6 shadow-sm border border-gray-100 space-y-4"
+          className="rounded-xl bg-white p-3 sm:p-6 shadow-sm border border-gray-100 space-y-4"
         >
           <h3 className="text-lg font-medium">
             {editId ? 'Edit Destination' : 'New Destination'}

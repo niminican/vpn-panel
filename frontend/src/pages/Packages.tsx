@@ -125,7 +125,7 @@ export default function Packages() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Packages</h1>
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Packages</h1>
         <button
           onClick={() => { setShowForm(!showForm); setEditId(null); resetForm() }}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -135,7 +135,7 @@ export default function Packages() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-xl bg-white p-6 shadow-sm border border-gray-100 space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-xl bg-white p-3 sm:p-6 shadow-sm border border-gray-100 space-y-4">
           <h3 className="text-lg font-medium">{editId ? 'Edit' : 'New'} Package</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -210,14 +210,14 @@ export default function Packages() {
       )}
 
       {/* Package Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {packages.length === 0 ? (
           <div className="col-span-3 rounded-xl bg-white p-12 shadow-sm border border-gray-100 text-center">
             <PackageIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">No packages defined yet.</p>
           </div>
         ) : packages.map((pkg) => (
-          <div key={pkg.id} className={`rounded-xl bg-white p-5 shadow-sm border ${pkg.enabled ? 'border-gray-100' : 'border-red-100 bg-red-50/30'}`}>
+          <div key={pkg.id} className={`rounded-xl bg-white p-3 sm:p-5 shadow-sm border ${pkg.enabled ? 'border-gray-100' : 'border-red-100 bg-red-50/30'}`}>
             <div className="flex items-start justify-between mb-3">
               <h3 className="font-medium text-gray-900">{pkg.name}</h3>
               <div className="flex gap-1">

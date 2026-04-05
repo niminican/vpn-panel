@@ -17,13 +17,14 @@ export function formatDate(date: string | null): string {
   if (!date) return '-'
   // Backend stores UTC without 'Z' suffix — append it so JS parses as UTC
   const utcDate = date.endsWith('Z') || date.includes('+') ? date : date + 'Z'
-  return new Date(utcDate).toLocaleDateString('en-US', {
+  return new Date(utcDate).toLocaleString('en-US', {
     timeZone: 'America/Toronto',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   })
 }
 

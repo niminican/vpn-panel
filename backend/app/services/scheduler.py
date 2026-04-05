@@ -35,7 +35,11 @@ def start_scheduler():
     )
     from app.services.destination_vpn import check_all_destinations, manage_auto_destinations
     from app.services.connection_logger import flush as flush_logs
+    from app.services.blocked_logger import flush as flush_blocked, start as start_blocked_logger
     from app.services.session_tracker import track_sessions
+
+    # Start blocked request logger
+    start_blocked_logger()
 
     # Bandwidth polling
     scheduler.add_job(poll_bandwidth, "interval", seconds=60, id="poll_bandwidth")
@@ -61,6 +65,9 @@ def start_scheduler():
 
     # Connection log flush
     scheduler.add_job(flush_logs, "interval", seconds=5, id="flush_conn_logs")
+
+    # Blocked request flush
+    scheduler.add_job(flush_blocked, "interval", seconds=10, id="flush_blocked_logs")
 
     # Database cleanup (daily at 3:00 AM)
     from app.services.db_cleanup import cleanup_old_records

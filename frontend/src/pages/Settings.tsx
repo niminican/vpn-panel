@@ -26,8 +26,8 @@ function ChangePasswordSection() {
   const [changingPw, setChangingPw] = useState(false)
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
-      <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
+    <div className="rounded-xl bg-white p-3 sm:p-6 shadow-sm border border-gray-100">
+      <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
         <Lock className="h-5 w-5 text-gray-500" />
         Change Admin Password
       </h3>
@@ -160,7 +160,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Settings</h1>
 
       {/* Change Password - FIRST */}
       <ChangePasswordSection />
@@ -178,7 +178,7 @@ export default function Settings() {
               if (!meta) return null
 
               return (
-                <div key={setting.key} className="flex items-center justify-between px-5 py-4">
+                <div key={setting.key} className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 gap-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{meta.label}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{meta.description}</p>

@@ -29,6 +29,30 @@ _session_transfer: dict[str, tuple[int, int]] = {}  # pubkey -> (rx, tx)
 HANDSHAKE_TIMEOUT = 180  # 3 minutes
 
 
+def close_orphan_sessions():
+    """Close any sessions left open from a previous process (e.g. after restart).
+
+    When the service restarts, _active_sessions is empty so the tracker
+    won't know about previously open sessions. This finds and closes them.
+    """
+    db = SessionLocal()
+    try:
+        open_sessions = db.query(UserSession).filter(
+            UserSession.disconnected_at == None  # noqa: E711
+        ).all()
+        if open_sessions:
+            now = datetime.now(timezone.utc)
+            for session in open_sessions:
+                session.disconnected_at = now
+            db.commit()
+            logger.info(f"Closed {len(open_sessions)} orphan sessions from previous run")
+    except Exception as e:
+        logger.error(f"Failed to close orphan sessions: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
     """Add GeoIP and OS info to a new session."""
     # GeoIP lookup

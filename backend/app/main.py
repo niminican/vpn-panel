@@ -105,6 +105,62 @@ def _start_services():
     except Exception as e:
         logger.warning(f"iptables logging init failed (non-critical): {e}")
 
+    # Close orphan sessions from previous run
+    try:
+        from app.services.session_tracker import close_orphan_sessions
+        close_orphan_sessions()
+    except Exception as e:
+        logger.warning(f"Orphan session cleanup failed (non-critical): {e}")
+
+    # Sync blacklist/whitelist rules for all users
+    try:
+        _sync_all_blacklists()
+    except Exception as e:
+        logger.warning(f"Blacklist sync failed (non-critical): {e}")
+
+
+def _sync_all_blacklists():
+    """Re-sync iptables rules for all users with blacklist/whitelist entries."""
+    from app.models.blacklist import UserBlacklist
+    from app.models.whitelist import UserWhitelist
+    from app.services.sync_firewall import sync_user_firewall
+    from app.api.blacklist import _normalize_address
+
+    db = SessionLocal()
+    try:
+        # Clean up stored addresses (strip URL prefixes)
+        all_bl = db.query(UserBlacklist).all()
+        for entry in all_bl:
+            clean = _normalize_address(entry.address)
+            if clean != entry.address:
+                logger.info(f"Normalizing blacklist address: '{entry.address}' -> '{clean}'")
+                entry.address = clean
+
+        all_wl = db.query(UserWhitelist).all()
+        for entry in all_wl:
+            clean = _normalize_address(entry.address)
+            if clean != entry.address:
+                logger.info(f"Normalizing whitelist address: '{entry.address}' -> '{clean}'")
+                entry.address = clean
+        db.commit()
+
+        # Find users that have blacklist or whitelist entries
+        bl_user_ids = {r[0] for r in db.query(UserBlacklist.user_id).distinct().all()}
+        wl_user_ids = {r[0] for r in db.query(UserWhitelist.user_id).distinct().all()}
+        all_user_ids = bl_user_ids | wl_user_ids
+        if not all_user_ids:
+            return
+
+        users = db.query(User).filter(User.id.in_(all_user_ids), User.enabled == True).all()  # noqa: E712
+        for user in users:
+            try:
+                sync_user_firewall(user, db)
+                logger.info(f"Firewall synced for user {user.username}")
+            except Exception as e:
+                logger.warning(f"Firewall sync failed for user {user.username}: {e}")
+    finally:
+        db.close()
+
 
 def _stop_services():
     """Stop background services."""
@@ -129,7 +185,7 @@ def _stop_services():
 
 app = FastAPI(
     title="VPN Panel",
-    version="1.3.0",
+    version="2.0.0",
     lifespan=lifespan,
     root_path="/vpn",
 )
