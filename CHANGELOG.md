@@ -2,7 +2,46 @@
 
 All notable changes to VPN Panel will be documented in this file.
 
-## [1.3.0] - 2026-04-05 (v0.1)
+## [2.0.0] - 2026-04-06
+
+### Added
+- **Visited destinations logging**: Separate tracking of allowed/visited connections via `wl_visit` iptables LOG prefix. Users with whitelist chains get dedicated visited destination lists showing which whitelisted sites were actually accessed.
+- **Blocked requests logging**: New `blocked_requests` table and `blocked_logger.py` service that captures packets dropped by blacklist rules (`bl_drop` prefix). Aggregates by (user, dest_ip) with count, first/last seen timestamps.
+- **Centralized firewall sync**: New `sync_firewall.py` service with single entry point `sync_user_firewall()` that reads both whitelist and blacklist from DB and sets up correct iptables chains, preventing duplicate/conflicting rules.
+- **IP→domain mapping**: `_ip_domain_map` in iptables service populated during chain setup for instant hostname resolution without DNS sniffer dependency.
+- **DNS sniffer rewrite**: Captures DNS queries (dst port 53) as binary pcap, parses queried domain from packet, resolves IPs using `dig`, and maps all resulting IPs to the domain. 5-minute cache prevents re-resolving.
+- **Visited destinations tab**: New UI section in User Detail showing whitelisted sites the user actually accessed (IP, hostname, count, last seen).
+- **Blocked requests tab**: New UI section in User Detail showing blocked connection attempts (IP, hostname, port, protocol, count, first/last seen).
+- New models: `BlockedRequest` (blocked_requests table)
+- New schemas: `BlockedRequestResponse`, `BlockedRequestListResponse`, `VisitedDestination`, `VisitedListResponse`
+- New API endpoints: `GET /api/users/{id}/sessions/{session_id}/visited`, `GET /api/users/{id}/sessions/{session_id}/blocked`
+
+### Changed
+- **Firewall architecture overhaul**: Replaced broken atomic swap iptables approach with flush-and-rebuild. DNS pre-resolution happens before touching iptables, then chain rebuild completes in milliseconds with zero traffic gap.
+- **DNS resolution engine**: Primary resolver changed from custom UDP DNS parser to `dig +short domain @8.8.8.8` (handles CNAME chains correctly). Falls back to `1.1.1.1`, then direct UDP query.
+- **Whitelist chain LOG prefix**: Changed from `user:X:` to `wl_visit:X:` to distinguish visited (allowed) traffic from general connections.
+- **Connection logger split**: `connection_logger.py` now only handles `wl_visit` and `user` entries. `bl_drop` entries delegated to `blocked_logger.py`.
+- **FORWARD LOG optimization**: Users with whitelist/blacklist chains no longer get FORWARD LOG rules (which would double-count). Only users without firewall chains get general connection logging.
+- **Frontend visited/blocked tables**: IP and hostname now display in separate columns (previously hostname replaced IP column).
+- **Blocked logger**: Added `--since=now` to journalctl to avoid replaying old entries on restart.
+- Startup sync normalizes stored whitelist/blacklist addresses (strips URL prefixes).
+
+### Fixed
+- **Atomic swap left users with no firewall rules**: `_run` doesn't raise on failure, so `iptables -N` and `iptables -E` failing silently left no chains. Replaced with flush-and-rebuild.
+- **DNS resolver returned wrong IPs**: Custom UDP parser couldn't follow CNAME chains (e.g., sb24.ir returned wrong IP). Fixed by using `dig` subprocess.
+- **Visited destinations included blocked traffic**: `user:X:` LOG in FORWARD chain fired for ALL traffic including blocked. Fixed with separate `wl_visit:X:` prefix.
+- **Blocked requests not recorded**: `kernel.printk_ratelimit=5` suppressed iptables LOG messages. Requires `kernel.printk_ratelimit=0` in `/etc/sysctl.d/99-vpn-panel.conf`.
+- **DNS sniffer cache always empty**: Original tcpdump `-vv` format was multi-line and unparseable. Rewrote to capture binary pcap of DNS queries.
+- **UI showed hostname instead of IP**: Frontend used `v.dest_hostname || v.dest_ip` in first column. Fixed to show `dest_ip` in column 1, `dest_hostname` in column 2.
+- **Duplicate blocked request handling**: Both `connection_logger.py` and `blocked_logger.py` processed `bl_drop`. Removed from connection_logger.
+
+### Database Changes
+- New table: `blocked_requests` (id, user_id, dest_ip, dest_hostname, dest_port, protocol, count, first_seen, last_seen)
+
+### Server Configuration
+- Requires `kernel.printk_ratelimit = 0` and `kernel.printk_ratelimit_burst = 1000` in `/etc/sysctl.d/99-vpn-panel.conf` for reliable iptables LOG capture.
+
+## [1.3.0] - 2026-04-05
 
 ### Added
 - **Session enrichment with GeoIP**: Sessions now show country, city, ISP, and ASN using MaxMind GeoLite2 databases. Country flags displayed via emoji.
