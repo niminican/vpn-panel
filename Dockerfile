@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir bcrypt==4.0.1
 
 # Copy backend code
 COPY backend/ ./backend/
