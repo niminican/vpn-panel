@@ -11,7 +11,7 @@ from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 - ensure all models are registered
 from app.models.admin import Admin
 from app.core.security import hash_password
-from app.api import auth, users, destinations, dashboard, whitelist, blacklist, schedules, logs, alerts, packages, admins
+from app.api import auth, users, destinations, dashboard, whitelist, blacklist, schedules, logs, alerts, packages, admins, inbounds, proxy_users
 from app.api import settings as settings_api
 
 logging.basicConfig(
@@ -233,6 +233,8 @@ app.include_router(alerts.router)
 app.include_router(packages.router)
 app.include_router(settings_api.router)
 app.include_router(admins.router)
+app.include_router(inbounds.router)
+app.include_router(proxy_users.router)
 
 # Telegram bot webhook
 try:

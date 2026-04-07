@@ -1,6 +1,8 @@
 from app.models.admin import Admin
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.destination_vpn import DestinationVPN
+from app.models.inbound import Inbound
+from app.models.proxy_user import ProxyUser
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.models.whitelist import UserWhitelist
@@ -18,6 +20,8 @@ __all__ = [
     "Admin",
     "AdminAuditLog",
     "DestinationVPN",
+    "Inbound",
+    "ProxyUser",
     "User",
     "UserSession",
     "UserWhitelist",
