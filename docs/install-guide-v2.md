@@ -93,7 +93,17 @@ bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release
 2. Click "New Inbound"
 3. Select protocol (VLESS/Trojan/Shadowsocks/HTTP/SOCKS)
 4. Set port, transport, and security options
-5. Create proxy accounts for users
+
+### Create Outbound (Optional)
+1. Go to Outbounds page
+2. Click "New Outbound"
+3. Select protocol and enter remote server details
+4. Examples: WireGuard tunnel, VLESS chain, direct, blackhole
+
+### Link Users to Inbound + Outbound
+1. Go to User Detail > Proxy tab
+2. Add proxy account: select inbound + outbound
+3. Copy share link for user's client app
 
 ## Backup & Restore
 

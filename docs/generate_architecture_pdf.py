@@ -175,7 +175,7 @@ def draw_section_label(c, x, y, text, color):
 
 
 def generate_architecture_pdf():
-    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Architecture-v1.3.0.pdf"
+    output_path = "/Users/nimini/Projects/VPN Panel/docs/VPN-Panel-Architecture-v2.0.0.pdf"
 
     # Use landscape A3 for more space
     page_w, page_h = landscape(A3)
@@ -195,7 +195,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - System Architecture")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  High-Level Architecture Overview  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 2.0.0  |  High-Level Architecture Overview  |  April 2026")
 
     # ── Section Labels ────────────────────────────────────────
     draw_section_label(c, 30, page_h - 85, "CLIENTS", C['client_hd'])
@@ -285,9 +285,9 @@ def generate_architecture_pdf():
         ], C['svc_bg'], C['svc_bd'], C['svc_hd'])
 
     draw_rounded_box(c, svc_x, y_row1 - 55, svc_w, 55,
-        "iptables Service", [
-            "Whitelist chains  |  Time schedules  |  LOG rules",
-            "Block/unblock  |  Destination fwmark routing",
+        "iptables + Firewall Sync", [
+            "Whitelist (wl_visit) | Blacklist (bl_drop) | Schedules",
+            "sync_firewall | IP->domain map | DNS pre-resolve",
         ], C['svc_bg'], C['svc_bd'], C['svc_hd'])
 
     draw_rounded_box(c, svc_x, y_row1 - 120, svc_w, 55,
@@ -336,11 +336,11 @@ def generate_architecture_pdf():
     # Database
     draw_rounded_box(c, 420, y_bottom, 200, 100,
         "SQLite (WAL Mode)", [
-            "13 Tables:",
+            "14 Tables:",
             "  Admin, User, Package, DestinationVPN",
-            "  UserWhitelist, UserSchedule",
+            "  UserWhitelist, UserBlacklist, UserSchedule",
             "  BandwidthHistory, ConnectionLog",
-            "  ActiveSession, UserSession",
+            "  BlockedRequest, ActiveSession, UserSession",
             "  Alert, AdminAuditLog, Setting",
         ], C['db_bg'], C['db_bd'], C['db_hd'])
 
@@ -348,6 +348,7 @@ def generate_architecture_pdf():
     draw_rounded_box(c, 650, y_bottom, 200, 100,
         "APScheduler (Background)", [
             "Every 5s:   flush connection logs",
+            "Every 10s:  flush blocked request logs",
             "Every 60s:  poll bandwidth, sessions",
             "Every 5m:   check alerts, expiry",
             "Every 60s:  destination health check",
@@ -386,9 +387,10 @@ def generate_architecture_pdf():
         "Audit & Monitoring", [
             "Admin Audit Log:",
             "  Action, IP, User-Agent, Device",
-            "Connection Logger:",
-            "  journalctl -k (iptables LOG)",
-            "  tcpdump DNS sniffer",
+            "Connection Logger (wl_visit + user):",
+            "  journalctl -k | DNS sniffer (pcap)",
+            "Blocked Logger (bl_drop):",
+            "  journalctl -k --grep=bl_drop",
             "Device Detector:",
             "  User-Agent -> device info",
         ], C['model_bg'], C['model_bd'], C['model_hd'])
@@ -480,7 +482,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - Data Model & Entity Relationships")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  SQLite Database Schema (13 Tables)  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 2.0.0  |  SQLite Database Schema (14 Tables)  |  April 2026")
 
     # ── Central: User Model ──────────────────────────────────
     ux, uy = 420, page_h - 280
@@ -499,8 +501,8 @@ def generate_architecture_pdf():
             "config_endpoint  |  config_mtu  |  config_keepalive",
             "created_at  |  updated_at",
             "",
-            "Relations: whitelist[], schedules[],",
-            "   sessions[], destination_vpn",
+            "Relations: whitelist[], blacklist[],",
+            "   schedules[], sessions[], blocked_requests[]",
         ], C['svc_bg'], C['svc_bd'], C['svc_hd'], header_h=20, font_size=8, item_font_size=6.5)
 
     # ── Left Column ──────────────────────────────────────────
@@ -570,8 +572,17 @@ def generate_architecture_pdf():
             "Unique: (user_id, address, port, protocol)",
         ], C['fe_bg'], C['fe_bd'], C['fe_hd'], item_font_size=6.5)
 
-    # UserSchedule
+    # UserBlacklist
     draw_rounded_box(c, rx, page_h - 240, 240, 75,
+        "UserBlacklist", [
+            "id (PK)  |  user_id (FK -> User)",
+            "address (IP/CIDR/domain or '*')",
+            "port  |  protocol (tcp/udp/any)  |  description",
+            "Wildcard '*' = block ALL (except whitelist)",
+        ], C['fe_bg'], C['fe_bd'], C['fe_hd'], item_font_size=6.5)
+
+    # UserSchedule
+    draw_rounded_box(c, rx, page_h - 330, 240, 75,
         "UserSchedule", [
             "id (PK)  |  user_id (FK -> User)",
             "day_of_week (0=Mon..6=Sun)",
@@ -580,7 +591,7 @@ def generate_architecture_pdf():
         ], C['fe_bg'], C['fe_bd'], C['fe_hd'], item_font_size=6.5)
 
     # UserSession
-    draw_rounded_box(c, rx, page_h - 340, 240, 85,
+    draw_rounded_box(c, rx, page_h - 430, 240, 85,
         "UserSession (Historical)", [
             "id (PK)  |  user_id (FK -> User)",
             "endpoint (IP:port)  |  client_ip",
@@ -591,7 +602,7 @@ def generate_architecture_pdf():
         ], C['client_bg'], C['client_bd'], C['client_hd'], item_font_size=6.5)
 
     # ActiveSession
-    draw_rounded_box(c, rx, page_h - 430, 240, 75,
+    draw_rounded_box(c, rx, page_h - 520, 240, 75,
         "ActiveSession (Live)", [
             "id (PK)  |  user_id (FK -> User)",
             "endpoint (IP:port)  |  last_handshake",
@@ -601,19 +612,30 @@ def generate_architecture_pdf():
 
     # ── Middle Bottom ────────────────────────────────────────
     # ConnectionLog
-    draw_rounded_box(c, 300, page_h - 460, 210, 95,
+    draw_rounded_box(c, 230, page_h - 460, 190, 95,
         "ConnectionLog", [
             "id (PK)  |  user_id (FK -> User)",
             "source_ip  |  dest_ip  |  dest_hostname",
             "dest_port  |  protocol (TCP/UDP/ICMP)",
-            "bytes_sent  |  bytes_received",
             "started_at  |  ended_at",
             "Index: (user_id, started_at)",
-            "Hostname: from DNS sniffer (tcpdump)",
+            "Sources: wl_visit + user LOG",
+            "Hostname: IP->domain map + DNS sniffer",
         ], C['model_bg'], C['model_bd'], C['model_hd'], item_font_size=6.5)
 
+    # BlockedRequest
+    draw_rounded_box(c, 440, page_h - 460, 190, 95,
+        "BlockedRequest", [
+            "id (PK)  |  user_id (FK -> User)",
+            "dest_ip  |  dest_hostname",
+            "dest_port  |  protocol",
+            "count (aggregate)  |  first_seen  |  last_seen",
+            "Source: bl_drop LOG prefix",
+            "Flushed every 10s by scheduler",
+        ], C['ext_bg'], C['ext_bd'], C['ext_hd'], item_font_size=6.5)
+
     # BandwidthHistory
-    draw_rounded_box(c, 540, page_h - 460, 210, 95,
+    draw_rounded_box(c, 650, page_h - 460, 210, 95,
         "BandwidthHistory", [
             "id (PK)  |  user_id (FK -> User)",
             "timestamp  |  bytes_up  |  bytes_down",
@@ -624,7 +646,7 @@ def generate_architecture_pdf():
         ], C['sched_bg'], C['sched_bd'], C['sched_hd'], item_font_size=6.5)
 
     # Alert
-    draw_rounded_box(c, 300, page_h - 570, 210, 95,
+    draw_rounded_box(c, 300, page_h - 570, 200, 95,
         "Alert", [
             "id (PK)  |  user_id (FK -> User, nullable)",
             "type: bandwidth_warning, expired,",
@@ -635,7 +657,7 @@ def generate_architecture_pdf():
         ], C['ext_bg'], C['ext_bd'], C['ext_hd'], item_font_size=6.5)
 
     # Package
-    draw_rounded_box(c, 540, page_h - 570, 210, 95,
+    draw_rounded_box(c, 530, page_h - 570, 210, 95,
         "Package", [
             "id (PK)  |  name  |  description",
             "bandwidth_limit  |  speed_limit",
@@ -693,7 +715,7 @@ def generate_architecture_pdf():
     c.drawCentredString(page_w/2, page_h - 35, "VPN Panel - Data Flow & Process Diagrams")
     c.setFont("Helvetica", 11)
     c.setFillColor(C['subtitle'])
-    c.drawCentredString(page_w/2, page_h - 52, "Version 1.3.0  |  Key Process Flows  |  April 2026")
+    c.drawCentredString(page_w/2, page_h - 52, "Version 2.0.0  |  Key Process Flows  |  April 2026")
 
     # ── Flow 1: User Creation ────────────────────────────────
     flow1_y = page_h - 90
@@ -733,7 +755,7 @@ def generate_architecture_pdf():
     steps2 = [
         ("VPN Client", "WireGuard handshake\nUDP :51820\nw/ public key + PSK", C['client_bg'], C['client_bd'], C['client_hd']),
         ("wg0 Interface", "Peer authenticated\nEndpoint recorded\nTraffic flows", C['sys_bg'], C['sys_bd'], C['sys_hd']),
-        ("iptables", "FORWARD chain:\nLOG (conn logging)\nWhitelist check\nSchedule check", C['sys_bg'], C['sys_bd'], C['sys_hd']),
+        ("iptables", "FORWARD chain:\nUser chain jump\nwl_visit/bl_drop LOG\nSchedule check", C['sys_bg'], C['sys_bd'], C['sys_hd']),
         ("tc (QoS)", "HTB rate limiting\nEgress: wg0 class\nIngress: IFB class", C['sys_bg'], C['sys_bd'], C['sys_hd']),
         ("Dest VPN", "Policy routing:\nfwmark -> table\nip route via dest", C['ext_bg'], C['ext_bd'], C['ext_hd']),
         ("Tracker (60s)", "wg show dump\nDelta calc\nUpdate user BW\nTrack sessions", C['sched_bg'], C['sched_bd'], C['sched_hd']),
@@ -758,12 +780,12 @@ def generate_architecture_pdf():
     draw_section_label(c, 30, flow3_y, "FLOW 3: Connection Logging & DNS Resolution", C['sched_hd'])
 
     steps3 = [
-        ("iptables LOG", "FORWARD chain\nLOG prefix:\n  'user:ID:'", C['sys_bg'], C['sys_bd'], C['sys_hd']),
-        ("journalctl -k", "Background thread\nReads kernel log\nReal-time stream", C['svc_bg'], C['svc_bd'], C['svc_hd']),
+        ("iptables LOG", "3 prefixes:\n  wl_visit:ID:\n  bl_drop:ID:\n  user:ID:", C['sys_bg'], C['sys_bd'], C['sys_hd']),
+        ("journalctl -k", "2 threads:\n  conn_logger (visit+user)\n  blocked_logger (bl_drop)", C['svc_bg'], C['svc_bd'], C['svc_hd']),
         ("Log Parser", "Extract:\n  user_id, src, dst\n  proto, port", C['svc_bg'], C['svc_bd'], C['svc_hd']),
-        ("DNS Sniffer", "tcpdump -i wg0\nudp src port 53\nCapture responses", C['ext_bg'], C['ext_bd'], C['ext_hd']),
-        ("Hostname Map", "IP -> hostname\nThread-safe deque\nPassive DNS cache", C['sched_bg'], C['sched_bd'], C['sched_hd']),
-        ("Buffer (5s)", "Batch insert\nConnectionLog table\nw/ hostname if known", C['db_bg'], C['db_bd'], C['db_hd']),
+        ("DNS Sniffer", "tcpdump -i wg0\nudp dst port 53\nBinary pcap queries", C['ext_bg'], C['ext_bd'], C['ext_hd']),
+        ("Hostname Map", "IP->domain map\n(from iptables setup)\n+ DNS sniffer cache", C['sched_bg'], C['sched_bd'], C['sched_hd']),
+        ("DB Flush", "ConnectionLog (5s)\nBlockedRequest (10s)\nAggregate counts", C['db_bg'], C['db_bd'], C['db_hd']),
     ]
 
     sy3 = flow3_y - 85
@@ -833,7 +855,7 @@ def generate_architecture_pdf():
     # ── Footer ───────────────────────────────────────────────
     c.setFont("Helvetica", 7)
     c.setFillColor(C['text_light'])
-    c.drawCentredString(page_w/2, 15, "VPN Panel Architecture v1.3.0 - Generated April 2026")
+    c.drawCentredString(page_w/2, 15, "VPN Panel Architecture v2.0.0 - Generated April 2026")
 
     # Add page numbers to all pages
     c.save()

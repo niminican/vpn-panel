@@ -27,8 +27,9 @@ VPN Panel is a web-based management panel for sharing VPN connections with multi
 - **User Management**: Create/manage VPN users with bandwidth limits, speed limits, and expiry dates
 - **Multi-Destination VPN**: Route users through different VPN destinations (WireGuard/OpenVPN)
 - **Bandwidth Tracking**: Real-time monitoring with volume and speed limits
-- **Access Control**: Per-user whitelists and time-based schedules
+- **Access Control**: Per-user whitelists, blacklists (including wildcard `*` block-all), and time-based schedules
 - **Connection Logging**: Track all connections with DNS hostname resolution
+- **Visited/Blocked Tracking**: Separate logs for allowed (visited) and blocked destinations per user
 - **Alerts**: Bandwidth warnings, expiry notifications via panel/email/Telegram
 - **Multi-Admin RBAC**: Role-based access control with granular permissions
 - **Session Enrichment**: GeoIP location (country/city/ISP) and OS detection for connected users
@@ -188,14 +189,30 @@ Click a user to view their detail page with tabs:
 - GeoIP data is enriched using MaxMind GeoLite2 databases (City + ASN)
 - OS detection works by pinging the client's VPN IP through the WireGuard interface and analyzing the TTL value
 
+#### Visited Destinations
+- Shows which whitelisted sites the user actually accessed (only appears for users with whitelist/blacklist rules)
+- **Columns**: Destination IP, Hostname, Visit Count, Last Seen
+- Hostnames are resolved via two sources: IP→domain map from iptables chain setup, and live DNS sniffer cache
+- Aggregated by destination IP with visit counts
+
+#### Blocked Requests
+- Shows connection attempts that were blocked by blacklist/wildcard rules
+- **Columns**: Destination IP, Hostname, Port, Protocol, Block Count, First/Last Seen
+- Aggregated by (user, dest_ip) to avoid storing millions of rows
+- Useful for monitoring what blocked users are trying to access
+
 #### Whitelist
-- Add IP/CIDR entries to restrict which destinations this user can access
+- Add IP/CIDR or domain entries to restrict which destinations this user can access
+- Domains are resolved via `dig +short @8.8.8.8` (handles CNAME chains correctly)
 - When entries exist, only whitelisted destinations are allowed (everything else blocked)
 - Leave empty for unrestricted access
+- Visited whitelist destinations are logged separately with the `wl_visit` prefix
 
 #### Blacklist
-- Add IP/CIDR entries to block specific destinations for this user
+- Add IP/CIDR or domain entries to block specific destinations for this user
+- **Wildcard blacklist** (`*`): Blocks ALL traffic except whitelisted entries and DNS. Use this combined with whitelist entries to create a strict allow-only policy.
 - Complements the whitelist: whitelist allows only specified destinations, blacklist blocks specified destinations
+- Blocked attempts are logged separately with the `bl_drop` prefix and shown in the Blocked Requests tab
 - Useful for blocking specific services or IP ranges
 
 #### Schedule
@@ -216,9 +233,19 @@ The Logs page shows all connections made by users:
 
 - **Filters**: User, destination IP, hostname, protocol, date range
 - **Columns**: Time, User, Source IP, Destination IP, Hostname, Port, Protocol
-- Hostnames are resolved via passive DNS sniffing (captures DNS responses on the WireGuard interface)
+- Hostnames are resolved via two mechanisms:
+  1. **IP→domain map**: Populated during whitelist/blacklist chain setup. Provides instant resolution for all configured domains.
+  2. **DNS sniffer**: Captures DNS queries (dst port 53) on the WireGuard interface, parses the queried domain, resolves IPs via `dig`, and maps them.
 
-**Note**: Hostname resolution works for IPs whose DNS queries pass through the server while the sniffer is running. Coverage is typically ~25% of connections.
+**Note**: For users with whitelist/blacklist rules, hostname coverage is near 100% thanks to the IP→domain map. For other users, coverage depends on DNS sniffer capture rates.
+
+### Visited vs Blocked vs Connection Logs
+
+- **Connection Logs**: General connection log for users WITHOUT firewall chains (logged via `user:X:` prefix in FORWARD chain)
+- **Visited Destinations**: Connections allowed by whitelist rules (logged via `wl_visit:X:` prefix inside the user's chain)
+- **Blocked Requests**: Connections dropped by blacklist/wildcard rules (logged via `bl_drop:X:` prefix inside the user's chain)
+
+Users with whitelist/blacklist chains do NOT appear in general connection logs to avoid double-counting.
 
 ---
 
@@ -456,8 +483,16 @@ Create an A record pointing your domain to the server's IP address:
 
 ### No hostname resolution in logs
 - DNS sniffer requires tcpdump: `apt install tcpdump`
-- Only resolves IPs whose DNS queries pass through the WireGuard interface
-- Coverage improves over time as more queries are captured
+- For users with whitelist/blacklist rules: hostnames come from the IP→domain map (populated during chain setup) — should always work
+- For other users: hostnames come from DNS sniffer which captures DNS queries on the WireGuard interface
+- If hostnames are missing, check that the DNS sniffer is running: look for `DNS sniffer started` in logs
+
+### Blocked requests not showing
+- Requires `kernel.printk_ratelimit = 0` in `/etc/sysctl.d/99-vpn-panel.conf`
+- Apply with: `sysctl -p /etc/sysctl.d/99-vpn-panel.conf`
+- Without this, the kernel suppresses iptables LOG messages after ~10 in 5 seconds
+- Verify with: `journalctl -k -f --grep=bl_drop` (should show entries when blocked traffic occurs)
+- The blocked logger reads from journalctl and flushes to DB every 10 seconds via the scheduler
 
 ### Destination VPN shows as down
 - Check interface exists: `ip link show <interface>`

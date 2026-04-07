@@ -29,7 +29,9 @@ The system auto-generates WireGuard keys and assigns an IP.
 
 **Schedule**: Time-based access windows (day + start/end time).
 
-## Inbounds (Multi-Protocol)
+## Inbounds (How Users Connect)
+
+Inbounds define how users connect to your server.
 
 ### Creating an Inbound
 1. Go to Inbounds > New Inbound
@@ -41,12 +43,32 @@ The system auto-generates WireGuard keys and assigns an IP.
    - **Security**: none, TLS, Reality
    - **Engine**: Xray-core or sing-box
 
-### Adding Proxy Accounts to Users
+## Outbounds (Where Traffic Goes)
+
+Outbounds define how user traffic exits your server to reach its destination.
+
+### Creating an Outbound
+1. Go to Outbounds > New Outbound
+2. Select protocol:
+   - **Direct**: Traffic goes straight to internet (default)
+   - **Blackhole**: Traffic is blocked
+   - **VLESS/Trojan/SS**: Chain to another proxy server
+   - **WireGuard**: Tunnel through a WireGuard server
+   - **HTTP/SOCKS**: Proxy through another server
+3. For proxy outbounds: enter server address, port, and credentials
+
+### Proxy Account Setup (Inbound + Outbound per User)
 1. Go to User Detail > Proxy tab
 2. Click "+ Add"
-3. Select an inbound
-4. Credentials are auto-generated
-5. Click copy icon to get share link (vless://, trojan://, ss://, etc.)
+3. Select an **inbound** (how user connects)
+4. Optionally select an **outbound** (where traffic goes, default: direct)
+5. Credentials are auto-generated
+6. Click copy icon to get share link (vless://, trojan://, ss://, etc.)
+
+### Example Configurations
+- User connects via VLESS → traffic exits via WireGuard Germany
+- User connects via Trojan → traffic goes directly to internet
+- User connects via Shadowsocks → traffic chains through VLESS Netherlands
 
 ## Destinations (Outbound VPN)
 Manage upstream VPN connections. Supports WireGuard and OpenVPN.
