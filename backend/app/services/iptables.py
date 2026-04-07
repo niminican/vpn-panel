@@ -8,9 +8,9 @@ Manages per-user iptables rules for:
 - Blocking disabled/expired users
 """
 import logging
-import subprocess
 
 from app.config import settings
+from app.core.command_executor import run_command
 from app.core.validators import (
     validate_ip,
     validate_ip_network,
@@ -42,9 +42,7 @@ def get_ip_domain_map() -> dict[str, str]:
 
 def _run(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
     """Run a command as a list (no shell). Returns (returncode, stdout, stderr)."""
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=10
-    )
+    result = run_command(cmd, timeout=10)
     if check and result.returncode != 0:
         logger.warning(f"iptables command failed: {' '.join(cmd)} -> {result.stderr.strip()}")
     return result.returncode, result.stdout.strip(), result.stderr.strip()

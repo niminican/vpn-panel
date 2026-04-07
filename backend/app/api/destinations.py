@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.command_executor import run_command
 from app.database import get_db
 from app.api.deps import require_permission
 from app.models.admin import Admin
@@ -60,7 +61,7 @@ def _dest_to_response(dest: DestinationVPN, db: Session) -> DestinationVPNRespon
 
 def _run_cmd(cmd: list[str], check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
     """Run a command safely as a list (no shell)."""
-    return subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=timeout)
+    return run_command(cmd, check=check, timeout=timeout)
 
 
 @router.get("", response_model=list[DestinationVPNResponse])

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Demo mode (skip actual WireGuard/iptables commands)
     demo_mode: bool = False
 
+    # Dry-run mode: log write commands instead of executing them
+    dry_run: bool = False
+
     # JWT
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7

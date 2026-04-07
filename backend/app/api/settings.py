@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.config import settings as app_settings
+from app.core.command_executor import get_command_history, clear_command_history
 from app.database import get_db
 from app.api.deps import require_permission
 from app.models.admin import Admin
@@ -52,4 +54,24 @@ def update_settings(
             db.add(Setting(key=update.key, value=update.value))
 
     db.commit()
+    return {"ok": True}
+
+
+@router.get("/dry-run-history")
+def get_dry_run_history(
+    _admin: Admin = Depends(require_permission("settings.manage")),
+):
+    """Get command execution history (useful for debugging dry-run mode)."""
+    return {
+        "dry_run_enabled": app_settings.dry_run,
+        "commands": get_command_history(),
+    }
+
+
+@router.delete("/dry-run-history")
+def clear_dry_run_history(
+    _admin: Admin = Depends(require_permission("settings.manage")),
+):
+    """Clear command execution history."""
+    clear_command_history()
     return {"ok": True}

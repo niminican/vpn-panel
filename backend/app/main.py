@@ -58,6 +58,11 @@ def _create_default_admin():
 
 def _start_services():
     """Start background services: scheduler, connection logger, tc, telegram."""
+    if settings.dry_run:
+        logger.warning("=" * 60)
+        logger.warning("DRY-RUN MODE ACTIVE: write commands will be logged but NOT executed")
+        logger.warning("=" * 60)
+
     # ── Safety first: ensure SSH is always protected ──
     try:
         from app.services.destination_vpn import ensure_ssh_protection

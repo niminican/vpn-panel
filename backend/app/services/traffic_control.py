@@ -5,9 +5,9 @@ Uses Linux tc (traffic control) with HTB qdiscs to enforce per-user speed limits
 Egress limiting on wg0, ingress limiting via IFB device.
 """
 import logging
-import subprocess
 
 from app.config import settings
+from app.core.command_executor import run_command
 from app.core.validators import validate_ip, validate_interface
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,7 @@ IFB_IFACE = "ifb0"
 
 def _run(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
     """Run a command as a list (no shell). Returns (returncode, stdout, stderr)."""
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=10
-    )
+    result = run_command(cmd, timeout=10)
     if check and result.returncode != 0:
         logger.warning(f"tc command failed: {' '.join(cmd)} -> {result.stderr.strip()}")
     return result.returncode, result.stdout.strip(), result.stderr.strip()

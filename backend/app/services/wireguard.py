@@ -1,4 +1,3 @@
-import subprocess
 import ipaddress
 import tempfile
 from pathlib import Path
@@ -6,18 +5,13 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.command_executor import run_command
 from app.models.user import User
 from app.core.security import encrypt_key, decrypt_key
 
 
 def _run(cmd: list[str], input_data: str | None = None) -> str:
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        input=input_data,
-        timeout=10,
-    )
+    result = run_command(cmd, input_data=input_data, timeout=10)
     if result.returncode != 0:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}: {result.stderr}")
     return result.stdout.strip()
