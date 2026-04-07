@@ -202,8 +202,6 @@ app.add_middleware(
         f"http://127.0.0.1:{settings.panel_port}",
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",
-        "https://mafia.namiravaei.com",
-        "http://mafia.namiravaei.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -246,7 +244,41 @@ except Exception as e:
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    """Real health check: verify DB, WireGuard, scheduler."""
+    checks = {"status": "ok"}
+
+    # Check database
+    try:
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"error: {e}"
+        checks["status"] = "degraded"
+
+    # Check WireGuard interface
+    try:
+        from app.core.command_executor import run_command
+        result = run_command(["ip", "link", "show", settings.wg_interface], timeout=5)
+        checks["wireguard"] = "ok" if result.returncode == 0 else "down"
+        if result.returncode != 0:
+            checks["status"] = "degraded"
+    except Exception:
+        checks["wireguard"] = "unknown"
+
+    # Check scheduler
+    try:
+        from app.services.scheduler import scheduler
+        checks["scheduler"] = "running" if scheduler.running else "stopped"
+        if not scheduler.running:
+            checks["status"] = "degraded"
+    except Exception:
+        checks["scheduler"] = "unknown"
+
+    return checks
 
 # Serve frontend static files (production) — must be LAST (catch-all)
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

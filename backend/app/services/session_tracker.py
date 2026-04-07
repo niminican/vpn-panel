@@ -12,6 +12,7 @@ Enriches sessions with:
 - OS detection (TTL fingerprinting) from the client's VPN IP
 """
 import logging
+import threading
 from datetime import datetime, timezone
 
 from app.database import SessionLocal
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 _active_sessions: dict[str, int] = {}
 # Track last known transfer per pubkey for session bandwidth
 _session_transfer: dict[str, tuple[int, int]] = {}  # pubkey -> (rx, tx)
+_session_lock = threading.Lock()
 
 HANDSHAKE_TIMEOUT = 180  # 3 minutes
 
@@ -82,6 +84,11 @@ def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
 
 def track_sessions():
     """Check WireGuard peers and update session records."""
+    with _session_lock:
+        _track_sessions_locked()
+
+
+def _track_sessions_locked():
     db = SessionLocal()
     try:
         peers = get_peers_status()

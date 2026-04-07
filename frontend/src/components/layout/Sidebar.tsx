@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   Globe,
+  Network,
   ScrollText,
   Package,
   Settings,
@@ -17,6 +18,7 @@ import { useAuthStore } from '../../stores/authStore'
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/destinations', icon: Globe, label: 'Destinations' },
+  { to: '/inbounds', icon: Network, label: 'Inbounds' },
   { to: '/users', icon: Users, label: 'Users' },
   { to: '/logs', icon: ScrollText, label: 'Logs' },
   { to: '/packages', icon: Package, label: 'Packages' },

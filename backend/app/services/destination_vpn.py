@@ -13,6 +13,9 @@ from app.models.destination_vpn import DestinationVPN
 
 logger = logging.getLogger(__name__)
 
+# Cached default route for recovery (captured at startup)
+_default_route: str | None = None
+
 
 def ensure_ssh_protection():
     """Ensure SSH (port 22) and server default route are ALWAYS preserved.
@@ -44,17 +47,23 @@ def ensure_ssh_protection():
         )
 
     # 3. Verify the default route in main table still exists
+    global _default_route
     result = run_command(
         ["ip", "route", "show", "default"],
         timeout=5,
     )
-    if "default" not in result.stdout:
+    if "default" in result.stdout:
+        # Cache the current default route for recovery
+        if not _default_route:
+            _default_route = result.stdout.strip().split("\n")[0]
+    else:
         logger.critical("SSH protection: DEFAULT ROUTE IS MISSING! Attempting recovery...")
-        # Try to restore default route via the first detected gateway
-        run_command(
-            ["ip", "route", "add", "default", "via", "216.250.112.1", "dev", "ens6"],
-            timeout=5,
-        )
+        if _default_route:
+            # Restore from cached route: "default via X.X.X.X dev ethN"
+            parts = _default_route.split()
+            run_command(["ip", "route", "add"] + parts, timeout=5)
+        else:
+            logger.critical("No cached default route available for recovery!")
 
 
 def _run_cmd(cmd: list[str], timeout: int = 10) -> tuple[int, str]:

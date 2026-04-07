@@ -66,8 +66,8 @@ def _sync_user_firewall_locked(user: User, db: Session):
         # No separate blacklist chain needed.
         try:
             remove_user_blacklist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")
         try:
             setup_user_whitelist(user.id, user.assigned_ip, wl_rules, has_blacklist_wildcard=True)
         except Exception as e:
@@ -76,8 +76,8 @@ def _sync_user_firewall_locked(user: User, db: Session):
         # Wildcard blacklist without whitelist: blacklist chain blocks everything
         try:
             remove_user_whitelist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")
         try:
             setup_user_blacklist(user.id, user.assigned_ip, bl_rules, wl_rules)
         except Exception as e:
@@ -90,8 +90,8 @@ def _sync_user_firewall_locked(user: User, db: Session):
                 setup_user_whitelist(user.id, user.assigned_ip, wl_rules, has_blacklist_wildcard=False)
             else:
                 remove_user_whitelist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")
         try:
             setup_user_blacklist(user.id, user.assigned_ip, bl_rules, wl_rules)
         except Exception as e:
@@ -100,8 +100,8 @@ def _sync_user_firewall_locked(user: User, db: Session):
         # Only whitelist, no blacklist
         try:
             remove_user_blacklist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")
         try:
             setup_user_whitelist(user.id, user.assigned_ip, wl_rules, has_blacklist_wildcard=False)
         except Exception as e:
@@ -110,9 +110,9 @@ def _sync_user_firewall_locked(user: User, db: Session):
         # No whitelist, no blacklist - remove everything
         try:
             remove_user_whitelist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")
         try:
             remove_user_blacklist(user.id, user.assigned_ip)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Cleanup step for user {user.username}: {e}")

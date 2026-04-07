@@ -5,6 +5,7 @@ Polls `wg show dump` every 60 seconds, calculates deltas from last poll,
 updates per-user bandwidth usage in DB, and records hourly snapshots.
 """
 import logging
+import threading
 from datetime import datetime, timezone
 
 from app.database import SessionLocal
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory cache of last known transfer values per public key
 _last_transfer: dict[str, tuple[int, int]] = {}  # pubkey -> (rx, tx)
+_transfer_lock = threading.Lock()
 
 
 def poll_bandwidth():
@@ -32,27 +34,28 @@ def poll_bandwidth():
 
         now = datetime.now(timezone.utc)
 
-        for peer in peers:
-            pubkey = peer["public_key"]
-            user = user_by_pubkey.get(pubkey)
-            if not user:
-                continue
+        with _transfer_lock:
+            for peer in peers:
+                pubkey = peer["public_key"]
+                user = user_by_pubkey.get(pubkey)
+                if not user:
+                    continue
 
-            current_rx = peer["transfer_rx"]  # bytes received by server = user upload
-            current_tx = peer["transfer_tx"]  # bytes sent by server = user download
+                current_rx = peer["transfer_rx"]  # bytes received by server = user upload
+                current_tx = peer["transfer_tx"]  # bytes sent by server = user download
 
-            if pubkey in _last_transfer:
-                last_rx, last_tx = _last_transfer[pubkey]
+                if pubkey in _last_transfer:
+                    last_rx, last_tx = _last_transfer[pubkey]
 
-                # Calculate deltas (handle counter reset)
-                delta_rx = max(0, current_rx - last_rx) if current_rx >= last_rx else current_rx
-                delta_tx = max(0, current_tx - last_tx) if current_tx >= last_tx else current_tx
+                    # Calculate deltas (handle counter reset)
+                    delta_rx = max(0, current_rx - last_rx) if current_rx >= last_rx else current_rx
+                    delta_tx = max(0, current_tx - last_tx) if current_tx >= last_tx else current_tx
 
-                if delta_rx > 0 or delta_tx > 0:
-                    user.bandwidth_used_up += delta_rx    # rx on server = upload from user
-                    user.bandwidth_used_down += delta_tx  # tx on server = download by user
+                    if delta_rx > 0 or delta_tx > 0:
+                        user.bandwidth_used_up += delta_rx    # rx on server = upload from user
+                        user.bandwidth_used_down += delta_tx  # tx on server = download by user
 
-            _last_transfer[pubkey] = (current_rx, current_tx)
+                _last_transfer[pubkey] = (current_rx, current_tx)
 
         db.commit()
 
