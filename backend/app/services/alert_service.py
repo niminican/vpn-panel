@@ -4,6 +4,7 @@ Alert Service
 Dispatches alerts to multiple channels: panel, email, telegram.
 Checks bandwidth thresholds, expiry dates, and VPN status.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -69,6 +70,15 @@ async def send_telegram_alert(chat_id: int, message: str):
         logger.error(f"Telegram alert failed: {e}")
 
 
+def _run_async(coro):
+    """Run an async coroutine from sync scheduler context (separate event loop)."""
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 def _create_alert(db: Session, user_id: int | None, alert_type: str, message: str, channel: str):
     """Create an alert record."""
     alert = Alert(
@@ -118,19 +128,10 @@ def check_bandwidth_thresholds():
 
                 # Send Telegram notification
                 if user.telegram_chat_id:
-                    import asyncio
                     try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.ensure_future(
-                                send_telegram_alert(user.telegram_chat_id, message)
-                            )
-                        else:
-                            loop.run_until_complete(
-                                send_telegram_alert(user.telegram_chat_id, message)
-                            )
-                    except RuntimeError:
-                        asyncio.run(send_telegram_alert(user.telegram_chat_id, message))
+                        _run_async(send_telegram_alert(user.telegram_chat_id, message))
+                    except Exception as e:
+                        logger.error(f"Telegram alert dispatch failed: {e}")
 
                 logger.info(f"Bandwidth alert for user {user.username}")
 
@@ -172,11 +173,10 @@ def check_expiry_dates():
                 _create_alert(db, user.id, "expiry_warning", message, "panel")
 
                 if user.telegram_chat_id:
-                    import asyncio
                     try:
-                        asyncio.run(send_telegram_alert(user.telegram_chat_id, message))
-                    except RuntimeError:
-                        pass
+                        _run_async(send_telegram_alert(user.telegram_chat_id, message))
+                    except Exception as e:
+                        logger.error(f"Telegram alert dispatch failed: {e}")
 
         # Already expired - disable
         expired = db.query(User).filter(
