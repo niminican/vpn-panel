@@ -26,7 +26,12 @@ class SingboxEngine(ProxyEngine):
     def binary_path(self) -> str:
         return SINGBOX_BINARY
 
-    def generate_config(self, inbounds: list[dict], proxy_users: list[dict]) -> dict:
+    def generate_config(
+        self,
+        inbounds: list[dict],
+        proxy_users: list[dict],
+        outbounds: list[dict] | None = None,
+    ) -> dict:
         """Generate sing-box config.json."""
         users_by_tag: dict[str, list[dict]] = {}
         for pu in proxy_users:
@@ -46,6 +51,7 @@ class SingboxEngine(ProxyEngine):
             if sb_inbound:
                 sb_inbounds.append(sb_inbound)
 
+        outbounds = outbounds or []
         config = {
             "log": {"level": "warn"},
             "experimental": {
@@ -57,6 +63,7 @@ class SingboxEngine(ProxyEngine):
             "outbounds": [
                 {"type": "direct", "tag": "direct"},
                 {"type": "block", "tag": "block"},
+                *self._build_outbounds(outbounds),
             ],
         }
         return config
@@ -159,6 +166,60 @@ class SingboxEngine(ProxyEngine):
             ]
 
         return base
+
+    def _build_outbounds(self, outbounds: list[dict]) -> list[dict]:
+        """Build sing-box outbound configs."""
+        result = []
+        for ob in outbounds:
+            if not ob.get("enabled", True) or ob["protocol"] in ("direct", "blackhole"):
+                continue
+
+            protocol = ob["protocol"]
+            sb_ob: dict = {"tag": ob["tag"], "type": protocol}
+
+            if protocol in ("vless", "trojan"):
+                sb_ob["server"] = ob.get("server", "")
+                sb_ob["server_port"] = ob.get("server_port", 443)
+                if protocol == "vless":
+                    sb_ob["uuid"] = ob.get("uuid", "")
+                    if ob.get("flow"):
+                        sb_ob["flow"] = ob["flow"]
+                else:
+                    sb_ob["password"] = ob.get("password", "")
+
+            elif protocol == "shadowsocks":
+                sb_ob["server"] = ob.get("server", "")
+                sb_ob["server_port"] = ob.get("server_port", 443)
+                sb_ob["method"] = ob.get("method", "aes-256-gcm")
+                sb_ob["password"] = ob.get("password", "")
+
+            elif protocol == "wireguard":
+                sb_ob["private_key"] = ob.get("private_key", "")
+                sb_ob["local_address"] = [ob.get("local_address", "10.0.0.2/32")]
+                sb_ob["peer_public_key"] = ob.get("peer_public_key", "")
+                sb_ob["server"] = ob.get("server", "")
+                sb_ob["server_port"] = ob.get("server_port", 51820)
+                if ob.get("mtu"):
+                    sb_ob["mtu"] = ob["mtu"]
+
+            elif protocol in ("http", "socks"):
+                sb_ob["server"] = ob.get("server", "")
+                sb_ob["server_port"] = ob.get("server_port", 1080)
+                if ob.get("uuid"):
+                    sb_ob["username"] = ob["uuid"]
+                    sb_ob["password"] = ob.get("password", "")
+
+            # TLS
+            security = ob.get("security", "none")
+            security_json = json.loads(ob.get("security_settings") or "{}")
+            if security == "tls" and protocol not in ("wireguard",):
+                sb_ob["tls"] = {
+                    "enabled": True,
+                    "server_name": security_json.get("sni", ""),
+                }
+
+            result.append(sb_ob)
+        return result
 
     def start(self, config_path: str) -> bool:
         """Start sing-box process."""

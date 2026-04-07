@@ -12,6 +12,7 @@ const UserNew = lazy(() => import('./pages/UserNew'))
 const UserDetail = lazy(() => import('./pages/UserDetail'))
 const Destinations = lazy(() => import('./pages/Destinations'))
 const Inbounds = lazy(() => import('./pages/Inbounds'))
+const Outbounds = lazy(() => import('./pages/Outbounds'))
 const Logs = lazy(() => import('./pages/Logs'))
 const Packages = lazy(() => import('./pages/Packages'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -59,6 +60,7 @@ export default function App() {
                       <Route path="/users/:id" element={<UserDetail />} />
                       <Route path="/destinations" element={<Destinations />} />
                       <Route path="/inbounds" element={<Inbounds />} />
+                      <Route path="/outbounds" element={<Outbounds />} />
                       <Route path="/logs" element={<Logs />} />
                       <Route path="/packages" element={<Packages />} />
                       <Route path="/settings" element={<Settings />} />

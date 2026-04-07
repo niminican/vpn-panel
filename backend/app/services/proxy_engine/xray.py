@@ -31,8 +31,15 @@ class XrayEngine(ProxyEngine):
     def binary_path(self) -> str:
         return XRAY_BINARY
 
-    def generate_config(self, inbounds: list[dict], proxy_users: list[dict]) -> dict:
+    def generate_config(
+        self,
+        inbounds: list[dict],
+        proxy_users: list[dict],
+        outbounds: list[dict] | None = None,
+    ) -> dict:
         """Generate Xray-core config.json."""
+        outbounds = outbounds or []
+
         # Group users by inbound tag
         users_by_tag: dict[str, list[dict]] = {}
         for pu in proxy_users:
@@ -96,6 +103,7 @@ class XrayEngine(ProxyEngine):
             "outbounds": [
                 {"tag": "direct", "protocol": "freedom"},
                 {"tag": "blackhole", "protocol": "blackhole"},
+                *self._build_outbounds(outbounds),
             ],
             "routing": {
                 "rules": [
@@ -104,6 +112,7 @@ class XrayEngine(ProxyEngine):
                         "inboundTag": ["api"],
                         "outboundTag": "api",
                     },
+                    *self._build_routing_rules(proxy_users),
                 ],
             },
         }
@@ -240,6 +249,98 @@ class XrayEngine(ProxyEngine):
             stream["security"] = "none"
 
         return stream
+
+    def _build_outbounds(self, outbounds: list[dict]) -> list[dict]:
+        """Build Xray outbound configs from outbound definitions."""
+        result = []
+        for ob in outbounds:
+            if not ob.get("enabled", True):
+                continue
+
+            protocol = ob["protocol"]
+            if protocol in ("direct", "blackhole"):
+                continue  # Already added as defaults
+
+            xray_ob: dict = {
+                "tag": ob["tag"],
+                "protocol": protocol,
+            }
+
+            if protocol == "vless":
+                xray_ob["settings"] = {
+                    "vnext": [{
+                        "address": ob.get("server", ""),
+                        "port": ob.get("server_port", 443),
+                        "users": [{"id": ob.get("uuid", ""), "flow": ob.get("flow", ""), "encryption": "none"}],
+                    }]
+                }
+            elif protocol == "trojan":
+                xray_ob["settings"] = {
+                    "servers": [{
+                        "address": ob.get("server", ""),
+                        "port": ob.get("server_port", 443),
+                        "password": ob.get("password", ""),
+                    }]
+                }
+            elif protocol == "shadowsocks":
+                xray_ob["settings"] = {
+                    "servers": [{
+                        "address": ob.get("server", ""),
+                        "port": ob.get("server_port", 443),
+                        "method": ob.get("method", "aes-256-gcm"),
+                        "password": ob.get("password", ""),
+                    }]
+                }
+            elif protocol == "wireguard":
+                xray_ob["settings"] = {
+                    "secretKey": ob.get("private_key", ""),
+                    "address": [ob.get("local_address", "10.0.0.2/32")],
+                    "peers": [{
+                        "publicKey": ob.get("peer_public_key", ""),
+                        "endpoint": f"{ob.get('server', '')}:{ob.get('server_port', 51820)}",
+                    }],
+                    "mtu": ob.get("mtu", 1420),
+                }
+            elif protocol in ("http", "socks"):
+                server = {
+                    "address": ob.get("server", ""),
+                    "port": ob.get("server_port", 1080),
+                }
+                if ob.get("uuid"):
+                    server["users"] = [{"user": ob["uuid"], "pass": ob.get("password", "")}]
+                xray_ob["settings"] = {"servers": [server]}
+
+            # Stream settings
+            stream = self._build_stream_settings(ob)
+            if stream and protocol not in ("wireguard",):
+                xray_ob["streamSettings"] = stream
+
+            result.append(xray_ob)
+        return result
+
+    def _build_routing_rules(self, proxy_users: list[dict]) -> list[dict]:
+        """Build routing rules to map users to their outbounds."""
+        rules = []
+        # Group users by (inbound_tag, outbound_tag)
+        mapping: dict[tuple[str, str], list[str]] = {}
+        for pu in proxy_users:
+            if not pu.get("enabled", True):
+                continue
+            outbound_tag = pu.get("outbound_tag", "direct")
+            if outbound_tag == "direct":
+                continue  # Default, no rule needed
+            inbound_tag = pu.get("inbound_tag", "")
+            key = (inbound_tag, outbound_tag)
+            mapping.setdefault(key, []).append(pu["email"])
+
+        for (inbound_tag, outbound_tag), emails in mapping.items():
+            rules.append({
+                "type": "field",
+                "inboundTag": [inbound_tag],
+                "user": emails,
+                "outboundTag": outbound_tag,
+            })
+        return rules
 
     def start(self, config_path: str) -> bool:
         """Start Xray-core process."""

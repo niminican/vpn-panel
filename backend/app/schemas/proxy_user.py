@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class ProxyUserCreate(BaseModel):
     inbound_id: int
+    outbound_id: Optional[int] = None  # None = direct (default)
     uuid: Optional[str] = None  # auto-generated if not provided
     password: Optional[str] = None  # auto-generated if not provided
     flow: Optional[str] = None  # VLESS flow
@@ -34,6 +35,11 @@ class ProxyUserResponse(BaseModel):
     inbound_tag: Optional[str] = None
     inbound_protocol: Optional[str] = None
     inbound_port: Optional[int] = None
+
+    # Outbound info
+    outbound_id: Optional[int] = None
+    outbound_tag: Optional[str] = None
+    outbound_protocol: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

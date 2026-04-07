@@ -4,6 +4,7 @@ import api from '../../api/client'
 interface ProxyAccount {
   id: number; user_id: number; inbound_id: number; uuid: string | null; password: string | null
   email: string; enabled: boolean; inbound_tag: string | null; inbound_protocol: string | null; inbound_port: number | null
+  outbound_id: number | null; outbound_tag: string | null; outbound_protocol: string | null
 }
 
 interface Props {

@@ -12,7 +12,7 @@ class ProxyEngine(ABC):
     """Interface that all proxy engines must implement."""
 
     @abstractmethod
-    def generate_config(self, inbounds: list[dict], proxy_users: list[dict]) -> dict:
+    def generate_config(self, inbounds: list[dict], proxy_users: list[dict], outbounds: list[dict] | None = None) -> dict:
         """Generate the engine's config from inbounds and their users.
 
         Args:

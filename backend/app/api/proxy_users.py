@@ -13,6 +13,7 @@ from app.config import settings
 from app.models.admin import Admin
 from app.models.user import User
 from app.models.inbound import Inbound
+from app.models.outbound import Outbound
 from app.models.proxy_user import ProxyUser
 from app.schemas.proxy_user import ProxyUserCreate, ProxyUserResponse, ProxyUserConfigResponse
 from app.core.exceptions import NotFoundError
@@ -42,6 +43,9 @@ def _to_response(pu: ProxyUser) -> ProxyUserResponse:
         inbound_tag=pu.inbound.tag if pu.inbound else None,
         inbound_protocol=pu.inbound.protocol if pu.inbound else None,
         inbound_port=pu.inbound.port if pu.inbound else None,
+        outbound_id=pu.outbound_id,
+        outbound_tag=pu.outbound.tag if pu.outbound else "direct",
+        outbound_protocol=pu.outbound.protocol if pu.outbound else "direct",
     )
 
 
@@ -95,9 +99,16 @@ def create_proxy_user(
     # Generate email for stats tracking
     email = f"{user.username}@{inbound.tag}"
 
+    # Validate outbound if specified
+    if req.outbound_id:
+        outbound = db.query(Outbound).filter(Outbound.id == req.outbound_id).first()
+        if not outbound:
+            raise NotFoundError("Outbound")
+
     proxy_user = ProxyUser(
         user_id=user_id,
         inbound_id=req.inbound_id,
+        outbound_id=req.outbound_id,
         uuid=final_uuid,
         password=final_password,
         email=email,

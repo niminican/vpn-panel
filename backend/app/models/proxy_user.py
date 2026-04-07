@@ -17,9 +17,13 @@ class ProxyUser(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped["User"] = relationship("User", backref="proxy_accounts")
 
-    # Link to Inbound
+    # Link to Inbound (how user connects)
     inbound_id: Mapped[int] = mapped_column(ForeignKey("inbounds.id", ondelete="CASCADE"), nullable=False)
     inbound: Mapped["Inbound"] = relationship("Inbound", back_populates="proxy_users")
+
+    # Link to Outbound (how traffic exits) — NULL = use default "direct"
+    outbound_id: Mapped[Optional[int]] = mapped_column(ForeignKey("outbounds.id", ondelete="SET NULL"), nullable=True)
+    outbound: Mapped["Outbound"] = relationship("Outbound")
 
     # Credentials (protocol-dependent)
     uuid: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
