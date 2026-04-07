@@ -45,16 +45,17 @@ def _resolve_domain(domain: str) -> str | None:
 def _resolve_domain_all(domain: str) -> list[str]:
     """Resolve a domain name to ALL A record IPs.
 
-    Uses `dig` command (most reliable), falls back to direct UDP DNS query.
+    Uses `dig` command first (handles CNAME chains), falls back to
+    socket.getaddrinfo (portable, no manual packet parsing).
     """
-    import subprocess
+    from app.core.command_executor import run_command
 
     # 1) Try dig command (most reliable, handles CNAME chains properly)
     for server in ["8.8.8.8", "1.1.1.1"]:
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["dig", "+short", domain, f"@{server}"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
                 ips = []
@@ -62,7 +63,6 @@ def _resolve_domain_all(domain: str) -> list[str]:
                     line = line.strip()
                     if not line:
                         continue
-                    # dig may return CNAME lines - skip non-IP lines
                     try:
                         ipaddress.ip_address(line)
                         ips.append(line)
@@ -73,67 +73,15 @@ def _resolve_domain_all(domain: str) -> list[str]:
         except Exception:
             continue
 
-    # 2) Fallback: direct UDP DNS query
-    import struct
-    dns_servers = ["8.8.8.8", "1.1.1.1"]
-
-    def _build_query(domain: str) -> bytes:
-        import random
-        txid = random.randint(0, 65535)
-        header = struct.pack(">HHHHHH", txid, 0x0100, 1, 0, 0, 0)
-        qname = b""
-        for part in domain.split("."):
-            qname += struct.pack("B", len(part)) + part.encode()
-        qname += b"\x00"
-        question = qname + struct.pack(">HH", 1, 1)
-        return header + question
-
-    def _parse_response(data: bytes) -> list[str]:
-        results = []
-        if len(data) < 12:
-            return results
-        qdcount = struct.unpack(">H", data[4:6])[0]
-        idx = 12
-        for _ in range(qdcount):
-            while idx < len(data) and data[idx] != 0:
-                if data[idx] & 0xC0 == 0xC0:
-                    idx += 2
-                    break
-                idx += data[idx] + 1
-            else:
-                idx += 1
-            idx += 4
-        ancount = struct.unpack(">H", data[6:8])[0]
-        for _ in range(ancount):
-            if idx >= len(data):
-                break
-            if data[idx] & 0xC0 == 0xC0:
-                idx += 2
-            else:
-                while idx < len(data) and data[idx] != 0:
-                    idx += data[idx] + 1
-                idx += 1
-            if idx + 10 > len(data):
-                break
-            rtype, rclass, _, rdlength = struct.unpack(">HHIH", data[idx:idx + 10])
-            idx += 10
-            if rtype == 1 and rclass == 1 and rdlength == 4:
-                results.append(socket.inet_ntoa(data[idx:idx + 4]))
-            idx += rdlength
-        return results
-
-    for server in dns_servers:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.settimeout(3)
-            sock.sendto(_build_query(domain), (server, 53))
-            data, _ = sock.recvfrom(1024)
-            sock.close()
-            results = _parse_response(data)
-            if results:
-                return results
-        except Exception:
-            continue
+    # 2) Fallback: socket.getaddrinfo (portable, no manual UDP parsing)
+    import socket
+    try:
+        results = socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_STREAM)
+        ips = list({r[4][0] for r in results})
+        if ips:
+            return ips
+    except (socket.gaierror, OSError):
+        pass
 
     return []
 

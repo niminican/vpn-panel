@@ -17,6 +17,8 @@ import {
 import api from '../api/client'
 import { formatBytes, formatDate, percentUsed } from '../lib/utils'
 import toast from 'react-hot-toast'
+import SessionsTab from '../components/user-detail/SessionsTab'
+import ProxyTab from '../components/user-detail/ProxyTab'
 
 interface Destination { id: number; name: string; protocol: string }
 interface Pkg { id: number; name: string; bandwidth_limit: number | null; speed_limit: number | null; duration_days: number; max_connections: number; enabled: boolean }
@@ -922,257 +924,26 @@ export default function UserDetail() {
 
       {/* Sessions Tab */}
       {tab === 'sessions' && (
-        <div className="space-y-3">
-          {sessions.length === 0 ? (
-            <div className="rounded-xl bg-white p-8 shadow-sm border border-gray-100 text-center text-gray-400">
-              No sessions recorded yet.
-            </div>
-          ) : (
-            sessions.map((s) => (
-              <div key={s.id} className="rounded-xl bg-white shadow-sm border border-gray-100 p-4">
-                {/* Session header: status + time */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    {!s.disconnected_at ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-medium">
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Active
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 text-gray-500 px-2.5 py-0.5 text-xs font-medium">
-                        {s.duration_seconds != null ? formatDuration(s.duration_seconds) : 'Ended'}
-                      </span>
-                    )}
-                    {s.os_hint && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        s.os_hint.includes('Windows') ? 'bg-blue-100 text-blue-700' :
-                        s.os_hint.includes('Linux') || s.os_hint.includes('Android') ? 'bg-green-100 text-green-700' :
-                        'bg-purple-100 text-purple-700'
-                      }`}>
-                        {s.os_hint === 'Linux/Android/macOS' ? 'Linux/Android/Mac' : s.os_hint}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs text-gray-400">{formatDate(s.connected_at)}</span>
-                </div>
-
-                {/* Info grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-                  {(s.country || s.city) && (
-                    <div>
-                      <p className="text-xs text-gray-400">Location</p>
-                      <p className="font-medium text-gray-700">
-                        {s.country_code && <span className="mr-1">{getFlagEmoji(s.country_code)}</span>}
-                        {[s.city, s.country].filter(Boolean).join(', ')}
-                      </p>
-                    </div>
-                  )}
-                  {s.isp && (
-                    <div>
-                      <p className="text-xs text-gray-400">ISP</p>
-                      <p className="font-medium text-gray-700 truncate" title={s.isp}>{s.isp}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs text-gray-400">Client IP</p>
-                    <p className="font-mono text-xs text-gray-600">{s.client_ip || '-'}</p>
-                  </div>
-                  <div className="hidden sm:block">
-                    <p className="text-xs text-gray-400">Endpoint</p>
-                    <p className="font-mono text-xs text-gray-600 truncate" title={s.endpoint || ''}>{s.endpoint || '-'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Download</p>
-                    <p className="font-medium text-green-600">{formatBytes(s.bytes_sent)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Upload</p>
-                    <p className="font-medium text-blue-600">{formatBytes(s.bytes_received)}</p>
-                  </div>
-                  {s.ttl != null && (
-                    <div className="hidden sm:block">
-                      <p className="text-xs text-gray-400">TTL</p>
-                      <p className="font-mono text-xs text-gray-600">{s.ttl}</p>
-                    </div>
-                  )}
-                  {s.disconnected_at && (
-                    <div>
-                      <p className="text-xs text-gray-400">Disconnected</p>
-                      <p className="text-xs text-gray-600">{formatDate(s.disconnected_at)}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* View Details button */}
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={() => toggleSessionDetail(s.id)}
-                    className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                      expandedSession === s.id
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                    }`}
-                  >
-                    {expandedSession === s.id ? 'Hide Details' : 'View Visited / Blocked'}
-                  </button>
-                </div>
-
-                {/* Session Detail: Visited & Blocked */}
-                {expandedSession === s.id && (
-                  <div className="mt-3 space-y-3">
-                    {sessionDetailLoading ? (
-                      <p className="text-sm text-gray-400 text-center py-4">Loading...</p>
-                    ) : (
-                      <>
-                        {/* Visited in this session */}
-                        <div className="rounded-lg bg-green-50 p-3">
-                          <h4 className="text-xs font-medium text-green-700 mb-2">
-                            Visited Destinations ({sessionVisited.length})
-                          </h4>
-                          {sessionVisited.length > 0 ? (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-green-200 text-left text-green-600">
-                                    <th className="px-2 py-1">IP</th>
-                                    <th className="px-2 py-1">Hostname</th>
-                                    <th className="px-2 py-1">Count</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {sessionVisited.map((v) => (
-                                    <tr key={v.dest_hostname || v.dest_ip} className="border-b border-green-100 last:border-0">
-                                      <td className="px-2 py-1 font-mono">{v.dest_ip}</td>
-                                      <td className="px-2 py-1 text-gray-600 truncate max-w-[120px]" title={v.dest_hostname || ''}>{v.dest_hostname || '-'}</td>
-                                      <td className="px-2 py-1 font-medium text-green-700">{v.count}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-green-600/60">No visited destinations in this session.</p>
-                          )}
-                        </div>
-
-                        {/* Blocked in this session */}
-                        <div className="rounded-lg bg-orange-50 p-3">
-                          <h4 className="text-xs font-medium text-orange-700 mb-2">
-                            Blocked Requests ({sessionBlocked.length})
-                          </h4>
-                          {sessionBlocked.length > 0 ? (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-orange-200 text-left text-orange-600">
-                                    <th className="px-2 py-1">IP</th>
-                                    <th className="px-2 py-1">Hostname</th>
-                                    <th className="px-2 py-1">Count</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {sessionBlocked.map((b) => (
-                                    <tr key={b.dest_hostname || b.dest_ip} className="border-b border-orange-100 last:border-0">
-                                      <td className="px-2 py-1 font-mono">{b.dest_ip}</td>
-                                      <td className="px-2 py-1 text-gray-600 truncate max-w-[120px]" title={b.dest_hostname || ''}>{b.dest_hostname || '-'}</td>
-                                      <td className="px-2 py-1 font-medium text-orange-700">{b.count}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-orange-600/60">No blocked requests in this session.</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-
-          {sessionsTotal > 50 && (
-            <div className="flex items-center justify-between border-t px-4 py-3">
-              <span className="text-sm text-gray-500">
-                Showing {sessionsPage * 50 + 1}-{Math.min((sessionsPage + 1) * 50, sessionsTotal)} of {sessionsTotal}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setSessionsPage(Math.max(0, sessionsPage - 1)); fetchSessions(Math.max(0, sessionsPage - 1)) }}
-                  disabled={sessionsPage === 0}
-                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
-                >Previous</button>
-                <button
-                  onClick={() => { setSessionsPage(sessionsPage + 1); fetchSessions(sessionsPage + 1) }}
-                  disabled={(sessionsPage + 1) * 50 >= sessionsTotal}
-                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
-                >Next</button>
-              </div>
-            </div>
-          )}
-        </div>
+        <SessionsTab
+          sessions={sessions} sessionsTotal={sessionsTotal} sessionsPage={sessionsPage}
+          setSessionsPage={setSessionsPage} fetchSessions={fetchSessions}
+          expandedSession={expandedSession} toggleSessionDetail={toggleSessionDetail}
+          sessionDetailLoading={sessionDetailLoading}
+          sessionVisited={sessionVisited} sessionBlocked={sessionBlocked}
+        />
       )}
 
       {/* Proxy Tab */}
       {tab === 'proxy' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Proxy Accounts</h3>
-            <button onClick={() => { setShowAddProxy(true); if (!proxyLoaded) fetchProxyAccounts() }} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">+ Add</button>
-          </div>
-
-          {showAddProxy && (
-            <div className="bg-gray-50 rounded-lg p-4 flex items-end gap-3">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Inbound</label>
-                <select value={selectedInbound} onChange={e => setSelectedInbound(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
-                  <option value="">Select inbound...</option>
-                  {inbounds.filter((i: any) => i.enabled).map((i: any) => (
-                    <option key={i.id} value={i.id}>{i.tag} ({i.protocol.toUpperCase()} :{i.port})</option>
-                  ))}
-                </select>
-              </div>
-              <button onClick={addProxyAccount} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create</button>
-              <button onClick={() => setShowAddProxy(false)} className="text-gray-500 px-3 py-2 text-sm">Cancel</button>
-            </div>
-          )}
-
-          {proxyAccounts.length === 0 && !showAddProxy && (
-            <p className="text-gray-400 text-center py-8">No proxy accounts</p>
-          )}
-
-          <div className="space-y-3">
-            {proxyAccounts.map((pa: any) => (
-              <div key={pa.id} className="bg-white rounded-lg border p-4 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      pa.inbound_protocol === 'vless' ? 'bg-blue-100 text-blue-700' :
-                      pa.inbound_protocol === 'trojan' ? 'bg-purple-100 text-purple-700' :
-                      pa.inbound_protocol === 'shadowsocks' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>{(pa.inbound_protocol || '').toUpperCase()}</span>
-                    <span className="text-sm font-medium">{pa.inbound_tag}</span>
-                    <span className="text-xs text-gray-400">:{pa.inbound_port}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-xs ${pa.enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {pa.enabled ? 'Active' : 'Disabled'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1 font-mono">{pa.uuid || pa.email}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => copyShareLink(pa.id)} title="Copy share link" className="p-2 rounded hover:bg-gray-100 text-blue-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
-                  </button>
-                  <button onClick={() => deleteProxyAccount(pa.id)} title="Delete" className="p-2 rounded hover:bg-red-50 text-red-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ProxyTab
+          userId={id || ''}
+          proxyAccounts={proxyAccounts} inbounds={inbounds}
+          showAddProxy={showAddProxy} setShowAddProxy={setShowAddProxy}
+          selectedInbound={selectedInbound} setSelectedInbound={setSelectedInbound}
+          addProxyAccount={addProxyAccount} deleteProxyAccount={deleteProxyAccount}
+          copyShareLink={copyShareLink} fetchProxyAccounts={fetchProxyAccounts}
+          proxyLoaded={proxyLoaded}
+        />
       )}
 
       {/* Whitelist Tab */}
