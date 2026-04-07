@@ -142,27 +142,23 @@ class TestTwoFactorAuth:
         mock_email.assert_called_once()
 
     @patch("app.api.auth._send_2fa_email")
-    def test_verify_2fa_with_correct_code(self, mock_email, client, db, admin_user):
+    @patch("app.api.auth._generate_2fa_code", return_value="123456")
+    def test_verify_2fa_with_correct_code(self, mock_code, mock_email, client, db, admin_user):
         """Correct 2FA code should return tokens."""
         admin_user.two_factor_enabled = True
         admin_user.two_factor_email = "admin@test.com"
         db.commit()
 
-        # Login first to get code generated
+        # Login first to get code generated (code is "123456" from mock)
         client.post("/api/auth/login", json={
             "username": "testadmin",
             "password": "testpass123",
         })
 
-        # Get the code from DB
-        db.refresh(admin_user)
-        code = admin_user.two_factor_code
-        assert code is not None
-
-        # Verify with correct code
+        # Verify with the known code
         res = client.post("/api/auth/verify-2fa", json={
             "username": "testadmin",
-            "code": code,
+            "code": "123456",
         })
         assert res.status_code == 200
         data = res.json()
@@ -191,6 +187,7 @@ class TestTwoFactorAuth:
         """Enable 2FA endpoint should set email and flag."""
         res = client.post("/api/auth/2fa/enable", json={
             "email": "test@example.com",
+            "password": "testpass123",
         }, headers=auth_headers)
         assert res.status_code == 200
 

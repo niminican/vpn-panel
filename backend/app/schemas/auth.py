@@ -36,6 +36,7 @@ class Verify2FARequest(BaseModel):
 
 class Enable2FARequest(BaseModel):
     email: str
+    password: str
 
 
 class Disable2FARequest(BaseModel):

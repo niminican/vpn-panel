@@ -70,21 +70,21 @@ class TestChangePassword:
     def test_change_password_success(self, client, auth_headers):
         res = client.post("/api/auth/change-password", json={
             "current_password": "testpass123",
-            "new_password": "newpass456",
+            "new_password": "newpass456secure",
         }, headers=auth_headers)
         assert res.status_code == 200
 
         # Login with new password
         res = client.post("/api/auth/login", json={
             "username": "testadmin",
-            "password": "newpass456",
+            "password": "newpass456secure",
         })
         assert res.status_code == 200
 
     def test_change_password_wrong_current(self, client, auth_headers):
         res = client.post("/api/auth/change-password", json={
             "current_password": "wrongpass",
-            "new_password": "newpass456",
+            "new_password": "newpass456secure",
         }, headers=auth_headers)
         assert res.status_code == 400
 
@@ -98,6 +98,6 @@ class TestChangePassword:
     def test_change_password_unauthenticated(self, client):
         res = client.post("/api/auth/change-password", json={
             "current_password": "pass",
-            "new_password": "newpass456",
+            "new_password": "newpass456secure",
         })
         assert res.status_code == 422  # Missing auth header

@@ -19,7 +19,7 @@ class Admin(Base):
     enabled: Mapped[bool] = mapped_column(default=True)
     two_factor_enabled: Mapped[bool] = mapped_column(default=False)
     two_factor_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    two_factor_code: Mapped[Optional[str]] = mapped_column(String(6), nullable=True)
+    two_factor_code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # bcrypt hash
     two_factor_code_expires: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

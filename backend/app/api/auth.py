@@ -75,7 +75,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # Check if 2FA is enabled
     if admin.two_factor_enabled and admin.two_factor_email:
         code = _generate_2fa_code()
-        admin.two_factor_code = code
+        admin.two_factor_code = hash_password(code)
         admin.two_factor_code_expires = datetime.now(timezone.utc) + TWO_FACTOR_CODE_EXPIRY
         db.commit()
 
@@ -117,7 +117,7 @@ def verify_2fa(req: Verify2FARequest, request: Request, db: Session = Depends(ge
     # Check code validity
     if (
         not admin.two_factor_code
-        or admin.two_factor_code != req.code
+        or not verify_password(req.code, admin.two_factor_code)
         or not admin.two_factor_code_expires
         or datetime.now(timezone.utc) > admin.two_factor_code_expires.replace(tzinfo=timezone.utc)
     ):
@@ -166,8 +166,8 @@ def change_password(
     if not verify_password(req.current_password, admin.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    if len(req.new_password) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    if len(req.new_password) < 12:
+        raise HTTPException(status_code=400, detail="New password must be at least 12 characters")
 
     client_ip, user_agent = _get_client_info(request)
     admin.password_hash = hash_password(req.new_password)
@@ -187,7 +187,10 @@ def enable_2fa(
     db: Session = Depends(get_db),
     admin: Admin = Depends(get_current_admin),
 ):
-    """Enable 2FA for the current admin. Sends a test code to verify email."""
+    """Enable 2FA for the current admin. Requires password confirmation."""
+    if not verify_password(req.password, admin.password_hash):
+        raise HTTPException(status_code=400, detail="Incorrect password")
+
     admin.two_factor_email = req.email
     admin.two_factor_enabled = True
     db.commit()

@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -33,8 +34,8 @@ def _sync_schedule_rules(user: User, db: Session):
             apply_time_schedule(user.id, user.assigned_ip, rules)
         else:
             remove_time_schedule(user.id, user.assigned_ip)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Schedule sync failed for user {user.username}: {e}")
 
 
 @router.get("", response_model=list[ScheduleResponse])

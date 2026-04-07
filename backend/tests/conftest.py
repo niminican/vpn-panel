@@ -71,6 +71,9 @@ def client():
 @pytest.fixture
 def admin_user(db):
     """Create and return a super_admin user."""
+    existing = db.query(Admin).filter(Admin.username == "testadmin").first()
+    if existing:
+        return existing
     admin = Admin(
         username="testadmin",
         password_hash=hash_password("testpass123"),
