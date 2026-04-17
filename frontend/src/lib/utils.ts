@@ -13,17 +13,23 @@ export function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
+// Timezone: reads from localStorage or falls back to browser default
+function getTimezone(): string {
+  return localStorage.getItem('panel_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
 export function formatDate(date: string | null): string {
   if (!date) return '-'
   // Backend stores UTC without 'Z' suffix — append it so JS parses as UTC
   const utcDate = date.endsWith('Z') || date.includes('+') ? date : date + 'Z'
-  return new Date(utcDate).toLocaleDateString('en-US', {
-    timeZone: 'America/Toronto',
+  return new Date(utcDate).toLocaleString('en-US', {
+    timeZone: getTimezone(),
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   })
 }
 

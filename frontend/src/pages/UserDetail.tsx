@@ -17,6 +17,8 @@ import {
 import api from '../api/client'
 import { formatBytes, formatDate, percentUsed } from '../lib/utils'
 import toast from 'react-hot-toast'
+import SessionsTab from '../components/user-detail/SessionsTab'
+import ProxyTab from '../components/user-detail/ProxyTab'
 
 interface Destination { id: number; name: string; protocol: string }
 interface Pkg { id: number; name: string; bandwidth_limit: number | null; speed_limit: number | null; duration_days: number; max_connections: number; enabled: boolean }
@@ -102,7 +104,14 @@ export default function UserDetail() {
   const [user, setUser] = useState<UserData | null>(null)
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [showQR, setShowQR] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'config' | 'sessions' | 'whitelist' | 'blacklist' | 'schedule'>('overview')
+  const [tab, setTab] = useState<'overview' | 'config' | 'sessions' | 'proxy' | 'whitelist' | 'blacklist' | 'schedule'>('overview')
+
+  // Proxy accounts state
+  const [proxyAccounts, setProxyAccounts] = useState<any[]>([])
+  const [proxyLoaded, setProxyLoaded] = useState(false)
+  const [inbounds, setInbounds] = useState<any[]>([])
+  const [showAddProxy, setShowAddProxy] = useState(false)
+  const [selectedInbound, setSelectedInbound] = useState('')
 
   // Whitelist state
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
@@ -112,10 +121,25 @@ export default function UserDetail() {
   const [blacklist, setBlacklist] = useState<WhitelistEntry[]>([])
   const [blForm, setBlForm] = useState({ address: '', port: '', protocol: 'any', description: '' })
 
+  // Blocked requests state
+  const [blockedRequests, setBlockedRequests] = useState<{ id: number; dest_ip: string; dest_hostname: string | null; dest_port: number | null; protocol: string | null; count: number; first_seen: string; last_seen: string }[]>([])
+  const [blockedTotal, setBlockedTotal] = useState(0)
+  const [blockedLoaded, setBlockedLoaded] = useState(false)
+
+  // Visited destinations state
+  const [visitedDests, setVisitedDests] = useState<{ dest_ip: string; dest_hostname: string | null; count: number; last_seen: string }[]>([])
+  const [visitedLoaded, setVisitedLoaded] = useState(false)
+
   // Sessions state
   const [sessions, setSessions] = useState<SessionEntry[]>([])
   const [sessionsTotal, setSessionsTotal] = useState(0)
   const [sessionsPage, setSessionsPage] = useState(0)
+
+  // Session detail (visited/blocked per session)
+  const [expandedSession, setExpandedSession] = useState<number | null>(null)
+  const [sessionVisited, setSessionVisited] = useState<{ dest_ip: string; dest_hostname: string | null; count: number; last_seen: string }[]>([])
+  const [sessionBlocked, setSessionBlocked] = useState<{ id: number; dest_ip: string; dest_hostname: string | null; dest_port: number | null; protocol: string | null; count: number; first_seen: string; last_seen: string }[]>([])
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false)
 
   // Schedule state
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
@@ -192,6 +216,26 @@ export default function UserDetail() {
     } catch { toast.error('Failed to load sessions') }
   }
 
+  const toggleSessionDetail = async (sessionId: number) => {
+    if (expandedSession === sessionId) {
+      setExpandedSession(null)
+      setSessionVisited([])
+      setSessionBlocked([])
+      return
+    }
+    setExpandedSession(sessionId)
+    setSessionDetailLoading(true)
+    try {
+      const [visitedRes, blockedRes] = await Promise.all([
+        api.get(`/users/${id}/sessions/${sessionId}/visited`),
+        api.get(`/users/${id}/sessions/${sessionId}/blocked`),
+      ])
+      setSessionVisited(visitedRes.data.visited)
+      setSessionBlocked(blockedRes.data.blocked)
+    } catch { toast.error('Failed to load session details') }
+    setSessionDetailLoading(false)
+  }
+
   const fetchWhitelist = async () => {
     try {
       const res = await api.get(`/users/${id}/whitelist`)
@@ -204,6 +248,48 @@ export default function UserDetail() {
       const res = await api.get(`/users/${id}/schedules`)
       setSchedules(res.data)
     } catch { toast.error('Failed to load schedules') }
+  }
+
+  const fetchProxyAccounts = async () => {
+    try {
+      const [proxyRes, inbRes] = await Promise.all([
+        api.get(`/users/${id}/proxy`),
+        api.get('/inbounds'),
+      ])
+      setProxyAccounts(proxyRes.data)
+      setInbounds(inbRes.data)
+      setProxyLoaded(true)
+    } catch { toast.error('Failed to load proxy accounts') }
+  }
+
+  const addProxyAccount = async () => {
+    if (!selectedInbound) return
+    try {
+      await api.post(`/users/${id}/proxy`, { inbound_id: parseInt(selectedInbound) })
+      toast.success('Proxy account created')
+      setShowAddProxy(false)
+      setSelectedInbound('')
+      fetchProxyAccounts()
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to create proxy account')
+    }
+  }
+
+  const deleteProxyAccount = async (proxyId: number) => {
+    if (!confirm('Delete this proxy account?')) return
+    try {
+      await api.delete(`/users/${id}/proxy/${proxyId}`)
+      toast.success('Proxy account deleted')
+      fetchProxyAccounts()
+    } catch { toast.error('Failed to delete') }
+  }
+
+  const copyShareLink = async (proxyId: number) => {
+    try {
+      const res = await api.get(`/users/${id}/proxy/${proxyId}/config`)
+      await navigator.clipboard.writeText(res.data.share_link)
+      toast.success('Share link copied!')
+    } catch { toast.error('Failed to get config') }
   }
 
   const toggleUser = async () => {
@@ -352,11 +438,71 @@ export default function UserDetail() {
   }
 
   const deleteWhitelistEntry = async (entryId: number) => {
+    if (!window.confirm('Are you sure you want to remove this whitelist entry?')) return
     try {
       await api.delete(`/users/${id}/whitelist/${entryId}`)
       fetchWhitelist()
       toast.success('Entry removed')
     } catch { toast.error('Failed to remove entry') }
+  }
+
+  const clearWhitelist = async () => {
+    if (!window.confirm('Remove all whitelist entries? User will have unrestricted access.')) return
+    try {
+      await api.delete(`/users/${id}/whitelist/all`)
+      setWhitelist([])
+      toast.success('Whitelist cleared')
+    } catch { toast.error('Failed to clear whitelist') }
+  }
+
+  // Visited destinations
+  const fetchVisitedDests = async () => {
+    try {
+      const res = await api.get(`/users/${id}/whitelist/visited`, { params: { limit: 200 } })
+      setVisitedDests(res.data.visited)
+      setVisitedLoaded(true)
+    } catch { /* ignore */ }
+  }
+
+  const clearVisitedDests = async () => {
+    if (!window.confirm('Clear all visited destination logs for this user?')) return
+    try {
+      await api.delete(`/users/${id}/whitelist/visited`)
+      setVisitedDests([])
+      toast.success('Visited logs cleared')
+    } catch { toast.error('Failed') }
+  }
+
+  const addVisitedToWhitelist = async (ip: string, hostname: string | null) => {
+    const addr = hostname || ip
+    if (!window.confirm(`Add "${addr}" to whitelist?`)) return
+    setAddingBlocked(addr)
+    try {
+      await api.post(`/users/${id}/whitelist`, {
+        address: addr,
+        protocol: 'any',
+        description: `Added from visited destinations (${ip})`,
+      })
+      fetchWhitelist()
+      toast.success(`Added ${addr} to whitelist`)
+    } catch { toast.error('Failed to add to whitelist') }
+    finally { setAddingBlocked(null) }
+  }
+
+  const addVisitedToBlacklist = async (ip: string, hostname: string | null) => {
+    const addr = hostname || ip
+    if (!window.confirm(`Add "${addr}" to blacklist?`)) return
+    setAddingBlocked(addr)
+    try {
+      await api.post(`/users/${id}/blacklist`, {
+        address: addr,
+        protocol: 'any',
+        description: `Added from visited destinations (${ip})`,
+      })
+      fetchBlacklist()
+      toast.success(`Added ${addr} to blacklist`)
+    } catch { toast.error('Failed to add to blacklist') }
+    finally { setAddingBlocked(null) }
   }
 
   // Blacklist
@@ -383,11 +529,86 @@ export default function UserDetail() {
   }
 
   const deleteBlacklistEntry = async (entryId: number) => {
+    if (!window.confirm('Are you sure you want to remove this blacklist entry?')) return
     try {
       await api.delete(`/users/${id}/blacklist/${entryId}`)
       fetchBlacklist()
       toast.success('Entry removed')
     } catch { toast.error('Failed to remove entry') }
+  }
+
+  // Blocked requests
+  const [addingBlocked, setAddingBlocked] = useState<string | null>(null) // tracks which entry is being added
+
+  const fetchBlockedRequests = async () => {
+    try {
+      const res = await api.get(`/users/${id}/blacklist/blocked`, { params: { limit: 200 } })
+      setBlockedRequests(res.data.blocked)
+      setBlockedTotal(res.data.total)
+      setBlockedLoaded(true)
+    } catch { /* ignore */ }
+  }
+
+  // Deduplicate blocked requests: merge rows with same (dest_ip OR dest_hostname)
+  const deduplicatedBlocked = (() => {
+    const map = new Map<string, typeof blockedRequests[0]>()
+    for (const b of blockedRequests) {
+      const key = b.dest_hostname || b.dest_ip
+      const existing = map.get(key)
+      if (existing) {
+        existing.count += b.count
+        if (new Date(b.last_seen) > new Date(existing.last_seen)) {
+          existing.last_seen = b.last_seen
+          if (b.dest_port && !existing.dest_port) existing.dest_port = b.dest_port
+          if (b.protocol && !existing.protocol) existing.protocol = b.protocol
+        }
+      } else {
+        map.set(key, { ...b })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count)
+  })()
+
+  const addBlockedToWhitelist = async (ip: string, hostname: string | null) => {
+    const addr = hostname || ip
+    if (!window.confirm(`Add "${addr}" to whitelist?`)) return
+    setAddingBlocked(addr)
+    try {
+      await api.post(`/users/${id}/whitelist`, {
+        address: addr,
+        protocol: 'any',
+        description: `Added from blocked requests (${ip})`,
+      })
+      fetchWhitelist()
+      toast.success(`Added ${addr} to whitelist`)
+    } catch { toast.error('Failed to add to whitelist') }
+    finally { setAddingBlocked(null) }
+  }
+
+  const addBlockedToBlacklist = async (ip: string, hostname: string | null) => {
+    const addr = hostname || ip
+    if (!window.confirm(`Add "${addr}" to blacklist?`)) return
+    setAddingBlocked(addr)
+    try {
+      await api.post(`/users/${id}/blacklist`, {
+        address: addr,
+        protocol: 'any',
+        description: `Added from blocked requests (${ip})`,
+      })
+      fetchBlacklist()
+      toast.success(`Added ${addr} to blacklist`)
+    } catch { toast.error('Failed to add to blacklist') }
+    finally { setAddingBlocked(null) }
+  }
+
+  const clearBlockedRequests = async () => {
+    if (!window.confirm('Clear all blocked request logs?')) return
+    try {
+      await api.delete(`/users/${id}/blacklist/blocked`)
+      setBlockedRequests([])
+      setBlockedTotal(0)
+      toast.success('Blocked requests cleared')
+    } catch { toast.error('Failed') }
   }
 
   // Schedule
@@ -419,16 +640,16 @@ export default function UserDetail() {
   const downPercent = percentUsed(user.bandwidth_used_down, user.bandwidth_limit_down)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/users')} className="rounded-lg p-2 hover:bg-gray-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">{user.username}</h1>
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900">{user.username}</h1>
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                 user.is_online ? 'bg-green-100 text-green-700' : user.enabled ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
               }`}>
@@ -438,27 +659,27 @@ export default function UserDetail() {
             <p className="text-sm text-gray-500">{user.assigned_ip} | Created {formatDate(user.created_at)}</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={startEditUser} className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100">
-            <Pencil className="h-4 w-4" /> Edit
+        <div className="flex gap-1.5 sm:gap-2 flex-wrap ml-10 sm:ml-0">
+          <button onClick={startEditUser} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-blue-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-blue-600 hover:bg-blue-100">
+            <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Edit
           </button>
-          <button onClick={toggleUser} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${
+          <button onClick={toggleUser} className={`flex items-center gap-1 sm:gap-1.5 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium ${
             user.enabled ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
           }`}>
-            <Power className="h-4 w-4" /> {user.enabled ? 'Disable' : 'Enable'}
+            <Power className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {user.enabled ? 'Disable' : 'Enable'}
           </button>
-          <button onClick={resetBandwidth} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-            <RotateCcw className="h-4 w-4" /> Reset BW
+          <button onClick={resetBandwidth} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-gray-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-100">
+            <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Reset BW</span><span className="sm:hidden">Reset</span>
           </button>
-          <button onClick={deleteUser} className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100">
-            <Trash2 className="h-4 w-4" /> Delete
+          <button onClick={deleteUser} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-red-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-red-600 hover:bg-red-100">
+            <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Delete
           </button>
         </div>
       </div>
 
       {/* Edit User Panel */}
       {editingUser && (
-        <div className="rounded-xl bg-white p-6 shadow-sm border border-blue-200 space-y-4">
+        <div className="rounded-xl bg-white p-3 sm:p-6 shadow-sm border border-blue-200 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium text-gray-900">Edit User</h3>
             <button onClick={() => setEditingUser(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button>
@@ -550,15 +771,18 @@ export default function UserDetail() {
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <div className="flex gap-6">
-          {(['overview', 'config', 'sessions', 'whitelist', 'blacklist', 'schedule'] as const).map((t) => (
+      <div className="border-b border-gray-200 overflow-x-auto">
+        <div className="flex gap-4 sm:gap-6 min-w-max">
+          {(['overview', 'config', 'sessions', 'proxy', 'whitelist', 'blacklist', 'schedule'] as const).map((t) => (
             <button key={t} onClick={() => {
               setTab(t)
               if (t === 'config' && !config) fetchConfig()
               if (t === 'sessions' && sessions.length === 0) fetchSessions()
+              if (t === 'proxy' && !proxyLoaded) fetchProxyAccounts()
               if (t === 'whitelist' && whitelist.length === 0) fetchWhitelist()
+              if (t === 'whitelist' && !visitedLoaded) fetchVisitedDests()
               if (t === 'blacklist' && blacklist.length === 0) fetchBlacklist()
+              if (t === 'blacklist' && !blockedLoaded) fetchBlockedRequests()
               if (t === 'schedule' && schedules.length === 0) fetchSchedules()
             }}
               className={`border-b-2 px-1 pb-3 text-sm font-medium capitalize transition-colors ${
@@ -623,18 +847,18 @@ export default function UserDetail() {
           <div className="rounded-xl bg-white p-5 shadow-sm border border-gray-100">
             {config ? (
               <div className="space-y-4">
-                <div className="flex gap-2">
-                  <button onClick={copyConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                    <Copy className="h-4 w-4" /> Copy
+                <div className="flex gap-1.5 sm:gap-2 flex-wrap">
+                  <button onClick={copyConfig} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-gray-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Copy
                   </button>
-                  <button onClick={downloadConfig} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                    <Download className="h-4 w-4" /> Download .conf
+                  <button onClick={downloadConfig} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-gray-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Download .conf</span><span className="sm:hidden">Download</span>
                   </button>
-                  <button onClick={() => setShowQR(!showQR)} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-                    <QrCode className="h-4 w-4" /> {showQR ? 'Hide' : 'Show'} QR
+                  <button onClick={() => setShowQR(!showQR)} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-gray-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-100">
+                    <QrCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {showQR ? 'Hide' : 'Show'} QR
                   </button>
-                  <button onClick={() => setEditingConfig(!editingConfig)} className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100">
-                    <Edit3 className="h-4 w-4" /> {editingConfig ? 'Cancel Edit' : 'Edit Config'}
+                  <button onClick={() => setEditingConfig(!editingConfig)} className="flex items-center gap-1 sm:gap-1.5 rounded-lg bg-blue-50 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-blue-600 hover:bg-blue-100">
+                    <Edit3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {editingConfig ? 'Cancel' : 'Edit'}
                   </button>
                 </div>
                 <pre className="rounded-lg bg-gray-900 text-green-400 p-4 text-sm font-mono overflow-x-auto whitespace-pre-wrap">{config.config_text}</pre>
@@ -700,117 +924,26 @@ export default function UserDetail() {
 
       {/* Sessions Tab */}
       {tab === 'sessions' && (
-        <div className="space-y-3">
-          {sessions.length === 0 ? (
-            <div className="rounded-xl bg-white p-8 shadow-sm border border-gray-100 text-center text-gray-400">
-              No sessions recorded yet.
-            </div>
-          ) : (
-            sessions.map((s) => (
-              <div key={s.id} className="rounded-xl bg-white shadow-sm border border-gray-100 p-4">
-                {/* Session header: status + time */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    {!s.disconnected_at ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-medium">
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Active
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 text-gray-500 px-2.5 py-0.5 text-xs font-medium">
-                        {s.duration_seconds != null ? formatDuration(s.duration_seconds) : 'Ended'}
-                      </span>
-                    )}
-                    {s.os_hint && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        s.os_hint.includes('Windows') ? 'bg-blue-100 text-blue-700' :
-                        s.os_hint.includes('Linux') || s.os_hint.includes('Android') ? 'bg-green-100 text-green-700' :
-                        'bg-purple-100 text-purple-700'
-                      }`}>
-                        {s.os_hint === 'Linux/Android/macOS' ? 'Linux/Android/Mac' : s.os_hint}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs text-gray-400">{formatDate(s.connected_at)}</span>
-                </div>
+        <SessionsTab
+          sessions={sessions} sessionsTotal={sessionsTotal} sessionsPage={sessionsPage}
+          setSessionsPage={setSessionsPage} fetchSessions={fetchSessions}
+          expandedSession={expandedSession} toggleSessionDetail={toggleSessionDetail}
+          sessionDetailLoading={sessionDetailLoading}
+          sessionVisited={sessionVisited} sessionBlocked={sessionBlocked}
+        />
+      )}
 
-                {/* Info grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-                  {/* Location */}
-                  {(s.country || s.city) && (
-                    <div>
-                      <p className="text-xs text-gray-400">Location</p>
-                      <p className="font-medium text-gray-700">
-                        {s.country_code && <span className="mr-1">{getFlagEmoji(s.country_code)}</span>}
-                        {[s.city, s.country].filter(Boolean).join(', ')}
-                      </p>
-                    </div>
-                  )}
-                  {/* ISP */}
-                  {s.isp && (
-                    <div>
-                      <p className="text-xs text-gray-400">ISP</p>
-                      <p className="font-medium text-gray-700 truncate" title={s.isp}>{s.isp}</p>
-                    </div>
-                  )}
-                  {/* Client IP */}
-                  <div>
-                    <p className="text-xs text-gray-400">Client IP</p>
-                    <p className="font-mono text-xs text-gray-600">{s.client_ip || '-'}</p>
-                  </div>
-                  {/* Endpoint */}
-                  <div>
-                    <p className="text-xs text-gray-400">Endpoint</p>
-                    <p className="font-mono text-xs text-gray-600 truncate" title={s.endpoint || ''}>{s.endpoint || '-'}</p>
-                  </div>
-                  {/* Download */}
-                  <div>
-                    <p className="text-xs text-gray-400">Download</p>
-                    <p className="font-medium text-green-600">{formatBytes(s.bytes_sent)}</p>
-                  </div>
-                  {/* Upload */}
-                  <div>
-                    <p className="text-xs text-gray-400">Upload</p>
-                    <p className="font-medium text-blue-600">{formatBytes(s.bytes_received)}</p>
-                  </div>
-                  {/* TTL */}
-                  {s.ttl != null && (
-                    <div>
-                      <p className="text-xs text-gray-400">TTL</p>
-                      <p className="font-mono text-xs text-gray-600">{s.ttl}</p>
-                    </div>
-                  )}
-                  {/* Disconnected */}
-                  {s.disconnected_at && (
-                    <div>
-                      <p className="text-xs text-gray-400">Disconnected</p>
-                      <p className="text-xs text-gray-600">{formatDate(s.disconnected_at)}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-
-          {sessionsTotal > 50 && (
-            <div className="flex items-center justify-between border-t px-4 py-3">
-              <span className="text-sm text-gray-500">
-                Showing {sessionsPage * 50 + 1}-{Math.min((sessionsPage + 1) * 50, sessionsTotal)} of {sessionsTotal}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setSessionsPage(Math.max(0, sessionsPage - 1)); fetchSessions(Math.max(0, sessionsPage - 1)) }}
-                  disabled={sessionsPage === 0}
-                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
-                >Previous</button>
-                <button
-                  onClick={() => { setSessionsPage(sessionsPage + 1); fetchSessions(sessionsPage + 1) }}
-                  disabled={(sessionsPage + 1) * 50 >= sessionsTotal}
-                  className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-gray-50"
-                >Next</button>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Proxy Tab */}
+      {tab === 'proxy' && (
+        <ProxyTab
+          userId={id || ''}
+          proxyAccounts={proxyAccounts} inbounds={inbounds}
+          showAddProxy={showAddProxy} setShowAddProxy={setShowAddProxy}
+          selectedInbound={selectedInbound} setSelectedInbound={setSelectedInbound}
+          addProxyAccount={addProxyAccount} deleteProxyAccount={deleteProxyAccount}
+          copyShareLink={copyShareLink} fetchProxyAccounts={fetchProxyAccounts}
+          proxyLoaded={proxyLoaded}
+        />
       )}
 
       {/* Whitelist Tab */}
@@ -822,7 +955,7 @@ export default function UserDetail() {
             <div className="flex gap-2 flex-wrap">
               <input type="text" placeholder="IP, CIDR or domain" value={wlForm.address}
                 onChange={(e) => setWlForm({ ...wlForm, address: e.target.value })}
-                className="flex-1 min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                className="flex-1 min-w-0 sm:min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
               <input type="number" placeholder="Port" value={wlForm.port}
                 onChange={(e) => setWlForm({ ...wlForm, port: e.target.value })}
                 className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
@@ -834,7 +967,7 @@ export default function UserDetail() {
               </select>
               <input type="text" placeholder="Description" value={wlForm.description}
                 onChange={(e) => setWlForm({ ...wlForm, description: e.target.value })}
-                className="flex-1 min-w-[150px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                className="flex-1 min-w-0 sm:min-w-[150px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
               <button onClick={addWhitelistEntry}
                 className="flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                 <Plus className="h-4 w-4" /> Add
@@ -844,6 +977,11 @@ export default function UserDetail() {
 
           {whitelist.length > 0 && (
             <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b">
+                <span className="text-xs font-medium text-gray-500 uppercase">{whitelist.length} entries</span>
+                <button onClick={clearWhitelist} className="text-xs text-red-500 hover:text-red-700">Clear All</button>
+              </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
@@ -870,12 +1008,84 @@ export default function UserDetail() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
           {whitelist.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">No whitelist entries. User has unrestricted access.</p>
           )}
+
+          {/* Visited Destinations - sites user accessed */}
+          <div className="rounded-xl bg-white p-5 shadow-sm border border-green-100 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-green-600">
+                Visited Destinations ({visitedDests.length})
+              </h3>
+              <div className="flex gap-3">
+                <button onClick={fetchVisitedDests} className="text-xs text-blue-500 hover:text-blue-700">Refresh</button>
+                <button onClick={clearVisitedDests} className="text-xs text-red-500 hover:text-red-700">Clear All</button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Sites this user has visited.
+            </p>
+            {visitedDests.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-green-50 text-left text-xs font-medium uppercase text-gray-500">
+                      <th className="px-2 sm:px-3 py-2">IP</th>
+                      <th className="px-2 sm:px-3 py-2">Hostname</th>
+                      <th className="px-2 sm:px-3 py-2">Count</th>
+                      <th className="px-2 sm:px-3 py-2 hidden sm:table-cell">Last Seen</th>
+                      <th className="px-2 sm:px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visitedDests.map((v) => {
+                      const addr = v.dest_hostname || v.dest_ip
+                      const isAdding = addingBlocked === addr
+                      return (
+                        <tr key={addr} className="border-b last:border-b-0 hover:bg-green-50/50">
+                          <td className="px-2 sm:px-3 py-2 font-mono text-xs">
+                            {v.dest_ip}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-xs text-gray-600 max-w-[150px] truncate" title={v.dest_hostname || ''}>
+                            {v.dest_hostname || <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-xs font-medium text-green-600">{v.count}</td>
+                          <td className="px-2 sm:px-3 py-2 text-xs text-gray-500 whitespace-nowrap hidden sm:table-cell">{formatDate(v.last_seen)}</td>
+                          <td className="px-2 sm:px-3 py-2">
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => addVisitedToWhitelist(v.dest_ip, v.dest_hostname)}
+                                disabled={isAdding}
+                                className={`rounded px-1.5 sm:px-2 py-1 text-xs font-medium ${isAdding ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                                title="Add to whitelist"
+                              >
+                                {isAdding ? '...' : '+ WL'}
+                              </button>
+                              <button
+                                onClick={() => addVisitedToBlacklist(v.dest_ip, v.dest_hostname)}
+                                disabled={isAdding}
+                                className={`rounded px-1.5 sm:px-2 py-1 text-xs font-medium ${isAdding ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                                title="Add to blacklist"
+                              >
+                                {isAdding ? '...' : '+ BL'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-4">No visited destinations yet. Click Refresh to check for new data.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -888,7 +1098,7 @@ export default function UserDetail() {
               Block specific addresses. Use <code className="bg-gray-100 px-1 rounded">*</code> to block ALL traffic except whitelist entries.
             </p>
             <div className="flex flex-wrap gap-3 items-end">
-              <div className="flex-1 min-w-[200px]">
+              <div className="flex-1 min-w-0 sm:min-w-[200px]">
                 <label className="block text-xs text-gray-500 mb-1">Address (IP / CIDR / Domain / *)</label>
                 <input type="text" value={blForm.address} onChange={(e) => setBlForm({ ...blForm, address: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="e.g. 1.2.3.4 or * for all" />
@@ -907,7 +1117,7 @@ export default function UserDetail() {
                   <option value="udp">UDP</option>
                 </select>
               </div>
-              <div className="flex-1 min-w-[150px]">
+              <div className="flex-1 min-w-0 sm:min-w-[150px]">
                 <label className="block text-xs text-gray-500 mb-1">Description</label>
                 <input type="text" value={blForm.description} onChange={(e) => setBlForm({ ...blForm, description: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional" />
@@ -921,6 +1131,7 @@ export default function UserDetail() {
 
           {blacklist.length > 0 && (
             <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-red-50 text-left text-xs font-medium uppercase text-red-600">
@@ -947,12 +1158,90 @@ export default function UserDetail() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
           {blacklist.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">No blacklist entries. Nothing is blocked.</p>
           )}
+
+          {/* Blocked Requests Section */}
+          <div className="rounded-xl bg-white p-5 shadow-sm border border-orange-100 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-orange-600">
+                Blocked Requests ({deduplicatedBlocked.length})
+              </h3>
+              <div className="flex gap-3">
+                <button onClick={fetchBlockedRequests}
+                  className="text-xs text-blue-500 hover:text-blue-700">
+                  Refresh
+                </button>
+                <button onClick={clearBlockedRequests}
+                  className="text-xs text-red-500 hover:text-red-700">
+                  Clear All
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Destinations this user tried to access but were blocked.
+            </p>
+            {deduplicatedBlocked.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-orange-50 text-left text-xs font-medium uppercase text-gray-500">
+                      <th className="px-2 sm:px-3 py-2">IP</th>
+                      <th className="px-2 sm:px-3 py-2">Hostname</th>
+                      <th className="px-2 sm:px-3 py-2">Count</th>
+                      <th className="px-2 sm:px-3 py-2 hidden sm:table-cell">Last Seen</th>
+                      <th className="px-2 sm:px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deduplicatedBlocked.map((b) => {
+                      const addr = b.dest_hostname || b.dest_ip
+                      const isAdding = addingBlocked === addr
+                      return (
+                        <tr key={addr} className="border-b last:border-b-0 hover:bg-orange-50/50">
+                          <td className="px-2 sm:px-3 py-2 font-mono text-xs">
+                            {b.dest_ip}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-xs text-gray-600 max-w-[150px] truncate" title={b.dest_hostname || ''}>
+                            {b.dest_hostname || <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-xs font-medium text-orange-600">{b.count}</td>
+                          <td className="px-2 sm:px-3 py-2 text-xs text-gray-500 whitespace-nowrap hidden sm:table-cell">{formatDate(b.last_seen)}</td>
+                          <td className="px-2 sm:px-3 py-2">
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => addBlockedToWhitelist(b.dest_ip, b.dest_hostname)}
+                                disabled={isAdding}
+                                className={`rounded px-1.5 sm:px-2 py-1 text-xs font-medium ${isAdding ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                                title="Add to whitelist"
+                              >
+                                {isAdding ? '...' : '+ WL'}
+                              </button>
+                              <button
+                                onClick={() => addBlockedToBlacklist(b.dest_ip, b.dest_hostname)}
+                                disabled={isAdding}
+                                className={`rounded px-1.5 sm:px-2 py-1 text-xs font-medium ${isAdding ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                                title="Add to blacklist"
+                              >
+                                {isAdding ? '...' : '+ BL'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-4">No blocked requests yet. Click Refresh to check for new data.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -989,6 +1278,7 @@ export default function UserDetail() {
 
           {schedules.length > 0 && (
             <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
@@ -1013,6 +1303,7 @@ export default function UserDetail() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 

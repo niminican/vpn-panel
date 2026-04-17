@@ -23,6 +23,9 @@ def get_current_admin(
     if not admin:
         raise AuthenticationError()
 
+    if not admin.enabled:
+        raise AuthenticationError()
+
     return admin
 
 

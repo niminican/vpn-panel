@@ -3,6 +3,8 @@ import {
   LayoutDashboard,
   Users,
   Globe,
+  Network,
+  ArrowUpRight,
   ScrollText,
   Package,
   Settings,
@@ -17,6 +19,8 @@ import { useAuthStore } from '../../stores/authStore'
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/destinations', icon: Globe, label: 'Destinations' },
+  { to: '/inbounds', icon: Network, label: 'Inbounds' },
+  { to: '/outbounds', icon: ArrowUpRight, label: 'Outbounds' },
   { to: '/users', icon: Users, label: 'Users' },
   { to: '/logs', icon: ScrollText, label: 'Logs' },
   { to: '/packages', icon: Package, label: 'Packages' },
@@ -49,7 +53,7 @@ export default function Sidebar({ open, isMobile, onNavigate }: SidebarProps) {
       className={cn(
         'flex flex-col bg-gray-900 text-white transition-all duration-300',
         isMobile
-          ? 'fixed inset-y-0 left-0 z-40 w-64 shadow-2xl'
+          ? 'fixed inset-y-0 left-0 z-40 w-56 shadow-2xl'
           : open ? 'w-64' : 'w-16'
       )}
     >
@@ -67,7 +71,7 @@ export default function Sidebar({ open, isMobile, onNavigate }: SidebarProps) {
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                'flex items-center gap-3 px-4 py-2 sm:py-2.5 text-xs sm:text-sm transition-colors',
                 isActive
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'

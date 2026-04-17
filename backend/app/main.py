@@ -11,7 +11,7 @@ from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 - ensure all models are registered
 from app.models.admin import Admin
 from app.core.security import hash_password
-from app.api import auth, users, destinations, dashboard, whitelist, blacklist, schedules, logs, alerts, packages, admins
+from app.api import auth, users, destinations, dashboard, whitelist, blacklist, schedules, logs, alerts, packages, admins, inbounds, outbounds, proxy_users
 from app.api import settings as settings_api
 
 logging.basicConfig(
@@ -58,6 +58,11 @@ def _create_default_admin():
 
 def _start_services():
     """Start background services: scheduler, connection logger, tc, telegram."""
+    if settings.dry_run:
+        logger.warning("=" * 60)
+        logger.warning("DRY-RUN MODE ACTIVE: write commands will be logged but NOT executed")
+        logger.warning("=" * 60)
+
     # ── Safety first: ensure SSH is always protected ──
     try:
         from app.services.destination_vpn import ensure_ssh_protection
@@ -105,6 +110,62 @@ def _start_services():
     except Exception as e:
         logger.warning(f"iptables logging init failed (non-critical): {e}")
 
+    # Close orphan sessions from previous run
+    try:
+        from app.services.session_tracker import close_orphan_sessions
+        close_orphan_sessions()
+    except Exception as e:
+        logger.warning(f"Orphan session cleanup failed (non-critical): {e}")
+
+    # Sync blacklist/whitelist rules for all users
+    try:
+        _sync_all_blacklists()
+    except Exception as e:
+        logger.warning(f"Blacklist sync failed (non-critical): {e}")
+
+
+def _sync_all_blacklists():
+    """Re-sync iptables rules for all users with blacklist/whitelist entries."""
+    from app.models.blacklist import UserBlacklist
+    from app.models.whitelist import UserWhitelist
+    from app.services.sync_firewall import sync_user_firewall
+    from app.api.blacklist import _normalize_address
+
+    db = SessionLocal()
+    try:
+        # Clean up stored addresses (strip URL prefixes)
+        all_bl = db.query(UserBlacklist).all()
+        for entry in all_bl:
+            clean = _normalize_address(entry.address)
+            if clean != entry.address:
+                logger.info(f"Normalizing blacklist address: '{entry.address}' -> '{clean}'")
+                entry.address = clean
+
+        all_wl = db.query(UserWhitelist).all()
+        for entry in all_wl:
+            clean = _normalize_address(entry.address)
+            if clean != entry.address:
+                logger.info(f"Normalizing whitelist address: '{entry.address}' -> '{clean}'")
+                entry.address = clean
+        db.commit()
+
+        # Find users that have blacklist or whitelist entries
+        bl_user_ids = {r[0] for r in db.query(UserBlacklist.user_id).distinct().all()}
+        wl_user_ids = {r[0] for r in db.query(UserWhitelist.user_id).distinct().all()}
+        all_user_ids = bl_user_ids | wl_user_ids
+        if not all_user_ids:
+            return
+
+        users = db.query(User).filter(User.id.in_(all_user_ids), User.enabled == True).all()  # noqa: E712
+        for user in users:
+            try:
+                sync_user_firewall(user, db)
+                logger.info(f"Firewall synced for user {user.username}")
+            except Exception as e:
+                logger.warning(f"Firewall sync failed for user {user.username}: {e}")
+    finally:
+        db.close()
+
 
 def _stop_services():
     """Stop background services."""
@@ -129,7 +190,7 @@ def _stop_services():
 
 app = FastAPI(
     title="VPN Panel",
-    version="1.3.0",
+    version="2.0.0",
     lifespan=lifespan,
     root_path="/vpn",
 )
@@ -141,8 +202,6 @@ app.add_middleware(
         f"http://127.0.0.1:{settings.panel_port}",
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",
-        "https://mafia.namiravaei.com",
-        "http://mafia.namiravaei.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -172,6 +231,9 @@ app.include_router(alerts.router)
 app.include_router(packages.router)
 app.include_router(settings_api.router)
 app.include_router(admins.router)
+app.include_router(inbounds.router)
+app.include_router(outbounds.router)
+app.include_router(proxy_users.router)
 
 # Telegram bot webhook
 try:
@@ -183,7 +245,41 @@ except Exception as e:
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    """Real health check: verify DB, WireGuard, scheduler."""
+    checks = {"status": "ok"}
+
+    # Check database
+    try:
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"error: {e}"
+        checks["status"] = "degraded"
+
+    # Check WireGuard interface
+    try:
+        from app.core.command_executor import run_command
+        result = run_command(["ip", "link", "show", settings.wg_interface], timeout=5)
+        checks["wireguard"] = "ok" if result.returncode == 0 else "down"
+        if result.returncode != 0:
+            checks["status"] = "degraded"
+    except Exception:
+        checks["wireguard"] = "unknown"
+
+    # Check scheduler
+    try:
+        from app.services.scheduler import scheduler
+        checks["scheduler"] = "running" if scheduler.running else "stopped"
+        if not scheduler.running:
+            checks["status"] = "degraded"
+    except Exception:
+        checks["scheduler"] = "unknown"
+
+    return checks
 
 # Serve frontend static files (production) — must be LAST (catch-all)
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

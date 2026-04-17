@@ -50,9 +50,9 @@ export default function Alerts() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Alerts</h1>
+    <div className="space-y-3 sm:space-y-6">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Alerts</h1>
         <div className="flex gap-2">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)}
@@ -74,7 +74,7 @@ export default function Alerts() {
           </div>
         ) : alerts.map((alert) => (
           <div key={alert.id}
-            className={`rounded-xl bg-white p-4 shadow-sm border ${alert.acknowledged ? 'border-gray-100 opacity-60' : 'border-gray-200'} flex items-start justify-between`}>
+            className={`rounded-xl bg-white p-3 sm:p-4 shadow-sm border ${alert.acknowledged ? 'border-gray-100 opacity-60' : 'border-gray-200'} flex items-start justify-between gap-2`}>
             <div className="flex items-start gap-3">
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[alert.type] || 'bg-gray-100 text-gray-600'}`}>
                 {alert.type.replace(/_/g, ' ')}

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import String, DateTime, Text
+from sqlalchemy import String, DateTime, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -15,6 +16,11 @@ class Admin(Base):
     totp_secret: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = mapped_column(String(20), default="super_admin")  # super_admin, admin
     permissions: Mapped[str | None] = mapped_column(Text)  # JSON: list of permission strings
+    enabled: Mapped[bool] = mapped_column(default=True)
+    two_factor_enabled: Mapped[bool] = mapped_column(default=False)
+    two_factor_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    two_factor_code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # bcrypt hash
+    two_factor_code_expires: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     @property

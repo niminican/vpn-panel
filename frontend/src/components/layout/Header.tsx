@@ -1,4 +1,4 @@
-import { Menu, LogOut } from 'lucide-react'
+import { Menu, LogOut, UserCircle } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 
@@ -8,6 +8,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuToggle }: HeaderProps) {
   const logout = useAuthStore((s) => s.logout)
+  const admin = useAuthStore((s) => s.admin)
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -24,13 +25,22 @@ export default function Header({ onMenuToggle }: HeaderProps) {
         <Menu className="h-5 w-5" />
       </button>
 
-      <button
-        onClick={handleLogout}
-        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-      >
-        <LogOut className="h-4 w-4" />
-        <span className="hidden sm:inline">Logout</span>
-      </button>
+      <div className="flex items-center gap-3">
+        {admin && (
+          <div className="flex items-center gap-1.5 text-sm text-gray-600">
+            <UserCircle className="h-4 w-4" />
+            <span className="font-medium">{admin.username}</span>
+            <span className="hidden sm:inline text-xs text-gray-400">({admin.role === 'super_admin' ? 'Super Admin' : 'Admin'})</span>
+          </div>
+        )}
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Logout</span>
+        </button>
+      </div>
     </header>
   )
 }

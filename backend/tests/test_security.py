@@ -12,7 +12,9 @@ class TestSecurityHeaders:
     def test_health_endpoint_public(self, client):
         res = client.get("/api/health")
         assert res.status_code == 200
-        assert res.json() == {"status": "ok"}
+        data = res.json()
+        assert "status" in data
+        assert "database" in data
 
 
 class TestTokenSecurity:

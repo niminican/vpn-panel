@@ -12,6 +12,7 @@ Enriches sessions with:
 - OS detection (TTL fingerprinting) from the client's VPN IP
 """
 import logging
+import threading
 from datetime import datetime, timezone
 
 from app.database import SessionLocal
@@ -25,8 +26,33 @@ logger = logging.getLogger(__name__)
 _active_sessions: dict[str, int] = {}
 # Track last known transfer per pubkey for session bandwidth
 _session_transfer: dict[str, tuple[int, int]] = {}  # pubkey -> (rx, tx)
+_session_lock = threading.Lock()
 
 HANDSHAKE_TIMEOUT = 180  # 3 minutes
+
+
+def close_orphan_sessions():
+    """Close any sessions left open from a previous process (e.g. after restart).
+
+    When the service restarts, _active_sessions is empty so the tracker
+    won't know about previously open sessions. This finds and closes them.
+    """
+    db = SessionLocal()
+    try:
+        open_sessions = db.query(UserSession).filter(
+            UserSession.disconnected_at == None  # noqa: E711
+        ).all()
+        if open_sessions:
+            now = datetime.now(timezone.utc)
+            for session in open_sessions:
+                session.disconnected_at = now
+            db.commit()
+            logger.info(f"Closed {len(open_sessions)} orphan sessions from previous run")
+    except Exception as e:
+        logger.error(f"Failed to close orphan sessions: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
@@ -58,6 +84,11 @@ def _enrich_session(session: UserSession, client_ip: str | None, user) -> None:
 
 def track_sessions():
     """Check WireGuard peers and update session records."""
+    with _session_lock:
+        _track_sessions_locked()
+
+
+def _track_sessions_locked():
     db = SessionLocal()
     try:
         peers = get_peers_status()

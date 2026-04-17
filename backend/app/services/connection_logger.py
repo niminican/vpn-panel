@@ -17,7 +17,8 @@ from app.models.connection_log import ConnectionLog
 
 logger = logging.getLogger(__name__)
 
-# Buffer for batch inserts
+# Buffer for batch inserts (visited + general connections only)
+# Blocked requests are handled by blocked_logger.py
 _log_buffer: deque[dict] = deque(maxlen=10000)
 _buffer_lock = threading.Lock()
 _running = False
@@ -27,13 +28,37 @@ _dns_map: dict[str, str] = {}
 _dns_map_lock = threading.Lock()
 
 
-def _parse_nflog_line(line: str) -> dict | None:
-    """Parse a kernel log line with our LOG prefix."""
-    # Example: user:2: IN=wg0 ... SRC=10.8.0.2 DST=8.8.8.8 ... PROTO=TCP DPT=443
-    match = re.search(r'user:(\d+):', line)
-    if not match:
-        return None
+def _parse_log_line(line: str) -> tuple[dict | None, str]:
+    """Parse a kernel log line with our LOG prefix.
 
+    Returns (parsed_dict, log_type) where log_type is:
+      - "visited" for wl_visit:X: lines (allowed by whitelist)
+      - "blocked" for bl_drop:X: lines (blocked by blacklist/wildcard)
+      - "connection" for user:X: lines (general connection log from FORWARD)
+    """
+    # Check for blocked traffic first (bl_drop:X:)
+    bl_match = re.search(r'bl_drop:(\d+):', line)
+    if bl_match:
+        entry = _extract_fields(bl_match, line)
+        return entry, "blocked"
+
+    # Check for whitelisted visited traffic (wl_visit:X:)
+    wl_match = re.search(r'wl_visit:(\d+):', line)
+    if wl_match:
+        entry = _extract_fields(wl_match, line)
+        return entry, "visited"
+
+    # General connection log (user:X:) from FORWARD chain
+    user_match = re.search(r'user:(\d+):', line)
+    if user_match:
+        entry = _extract_fields(user_match, line)
+        return entry, "connection"
+
+    return None, ""
+
+
+def _extract_fields(match, line: str) -> dict | None:
+    """Extract common fields from a kernel log line."""
     user_id = int(match.group(1))
 
     src = re.search(r'SRC=(\S+)', line)
@@ -55,72 +80,164 @@ def _parse_nflog_line(line: str) -> dict | None:
 
 
 def _get_hostname(ip: str) -> str | None:
-    """Look up hostname from DNS sniffer cache."""
+    """Look up hostname from DNS sniffer cache, then IP→domain map from iptables."""
+    # 1. DNS sniffer cache (captures live DNS queries)
     with _dns_map_lock:
-        return _dns_map.get(ip)
+        hostname = _dns_map.get(ip)
+    if hostname:
+        return hostname
+
+    # 2. IP→domain map from iptables setup (always available for wl/bl entries)
+    try:
+        from app.services.iptables import get_ip_domain_map
+        ip_map = get_ip_domain_map()
+        return ip_map.get(ip)
+    except Exception:
+        return None
+
+
+def get_hostname(ip: str) -> str | None:
+    """Public API: look up hostname."""
+    return _get_hostname(ip)
 
 
 def _dns_sniffer_thread():
-    """Sniff DNS responses on wg0 to build IP->hostname mapping.
+    """Sniff DNS queries on wg0 to build IP->hostname mapping.
 
-    Uses tcpdump to capture DNS responses and parses the output to extract
-    the queried domain and all resolved IPs, mapping each IP to the original domain.
+    Captures DNS queries (dst port 53) from users, extracts the queried domain,
+    resolves it ourselves, and maps all resulting IPs to the domain.
     """
     global _running
-    _ip_pattern = re.compile(r'(\d+\.\d+\.\d+\.\d+)')
+    import struct
+
+    def _parse_dns_query(data: bytes) -> str | None:
+        """Parse a raw DNS query packet to extract the queried domain."""
+        if len(data) < 12:
+            return None
+
+        flags = struct.unpack(">H", data[2:4])[0]
+        is_response = (flags >> 15) & 1
+        if is_response:
+            return None  # We only want queries
+
+        qdcount = struct.unpack(">H", data[4:6])[0]
+        if qdcount == 0:
+            return None
+
+        # Parse question section
+        idx = 12
+        domain_parts = []
+        while idx < len(data) and data[idx] != 0:
+            if data[idx] & 0xC0 == 0xC0:
+                idx += 2
+                break
+            length = data[idx]
+            idx += 1
+            if idx + length > len(data):
+                return None
+            domain_parts.append(data[idx:idx + length].decode('ascii', errors='ignore'))
+            idx += length
+
+        if not domain_parts:
+            return None
+
+        domain = ".".join(domain_parts)
+
+        # Check QTYPE (2 bytes after null terminator)
+        idx += 1  # skip null
+        if idx + 2 <= len(data):
+            qtype = struct.unpack(">H", data[idx:idx + 2])[0]
+            # Only process A (1) and AAAA (28) queries
+            if qtype not in (1, 28):
+                return None
+
+        return domain
+
+    # Track recently resolved domains to avoid re-resolving
+    _resolved_cache: dict[str, float] = {}  # domain -> timestamp
+    CACHE_TTL = 300  # 5 minutes
 
     try:
+        # Capture DNS queries as raw pcap
         proc = subprocess.Popen(
-            ["tcpdump", "-i", "wg0", "-l", "-n", "udp and src port 53", "-vv"],
+            ["tcpdump", "-i", "wg0", "-n", "-U", "-w", "-", "udp and dst port 53"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
-            bufsize=1,
+            bufsize=0,
         )
-        logger.info("DNS sniffer started on wg0")
+        logger.info("DNS sniffer started on wg0 (query capture mode)")
+
+        # Read pcap global header (24 bytes)
+        pcap_header = proc.stdout.read(24)
+        if not pcap_header or len(pcap_header) < 24:
+            logger.error("DNS sniffer: failed to read pcap header")
+            return
 
         while _running:
-            line = proc.stdout.readline()
-            if not line:
+            pkt_header = proc.stdout.read(16)
+            if not pkt_header or len(pkt_header) < 16:
                 if proc.poll() is not None:
                     logger.warning("DNS sniffer process exited, restarting...")
                     time.sleep(2)
                     proc = subprocess.Popen(
-                        ["tcpdump", "-i", "wg0", "-l", "-n", "udp and src port 53", "-vv"],
+                        ["tcpdump", "-i", "wg0", "-n", "-U", "-w", "-", "udp and dst port 53"],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.DEVNULL,
-                        text=True,
-                        bufsize=1,
+                        bufsize=0,
                     )
+                    pcap_header = proc.stdout.read(24)
                     continue
                 time.sleep(0.1)
                 continue
 
-            # tcpdump format: ... q: A? domain.com. N/0/0 ... domain.com. A 1.2.3.4, ...
-            # Extract the queried domain from "q: A? domain.com."
-            q_match = re.search(r'q:\s+(?:A|AAAA)\?\s+(\S+?)\.?\s', line)
-            if not q_match:
+            _, _, incl_len, _ = struct.unpack("<IIII", pkt_header)
+            pkt_data = proc.stdout.read(incl_len)
+            if not pkt_data or len(pkt_data) < incl_len:
                 continue
 
-            query_domain = q_match.group(1).rstrip('.')
-
-            # Skip DNS infrastructure queries
-            if query_domain.endswith(('.arpa', '.local')):
+            # Raw IP packet (no ethernet on wg0)
+            if len(pkt_data) < 20:
+                continue
+            ihl = (pkt_data[0] & 0x0F) * 4
+            if len(pkt_data) < ihl + 8:
                 continue
 
-            # Find all A record IPs in the response line
-            # They appear as "domain. A x.x.x.x" patterns
-            a_records = re.findall(r'\.\s+A\s+(\d+\.\d+\.\d+\.\d+)', line)
+            dns_data = pkt_data[ihl + 8:]  # Skip IP + UDP headers
+            domain = _parse_dns_query(dns_data)
+            if not domain:
+                continue
 
-            if a_records:
-                with _dns_map_lock:
-                    for ip in a_records:
-                        _dns_map[ip] = query_domain
-                    # Keep cache reasonable size
-                    if len(_dns_map) > 50000:
-                        keys = list(_dns_map.keys())
-                        for k in keys[:25000]:
-                            del _dns_map[k]
+            # Skip infrastructure
+            if domain.endswith(('.arpa', '.local', '.internal')):
+                continue
+
+            # Skip if recently resolved
+            now = time.time()
+            if domain in _resolved_cache and (now - _resolved_cache[domain]) < CACHE_TTL:
+                continue
+
+            _resolved_cache[domain] = now
+
+            # Clean old cache entries
+            if len(_resolved_cache) > 5000:
+                cutoff = now - CACHE_TTL
+                _resolved_cache.clear()
+
+            # Resolve domain to IPs using dig
+            try:
+                from app.core.validators import resolve_all_ips
+                ips = resolve_all_ips(domain)
+                if ips:
+                    with _dns_map_lock:
+                        for ip in ips:
+                            _dns_map[ip] = domain
+                        # Keep cache reasonable
+                        if len(_dns_map) > 50000:
+                            keys = list(_dns_map.keys())
+                            for k in keys[:25000]:
+                                del _dns_map[k]
+            except Exception:
+                pass
 
         proc.terminate()
     except Exception as e:
@@ -128,19 +245,20 @@ def _dns_sniffer_thread():
 
 
 def _flush_buffer():
-    """Flush the log buffer to the database."""
+    """Flush the log buffer (visited + general connections) to the database.
+
+    Note: Blocked requests are handled by blocked_logger.py separately.
+    """
     with _buffer_lock:
-        if not _log_buffer:
-            return
-        entries = list(_log_buffer)
+        conn_entries = list(_log_buffer)
         _log_buffer.clear()
 
-    if not entries:
+    if not conn_entries:
         return
 
     db = SessionLocal()
     try:
-        for entry in entries:
+        for entry in conn_entries:
             hostname = _get_hostname(entry["dest_ip"])
             log = ConnectionLog(
                 user_id=entry["user_id"],
@@ -152,8 +270,9 @@ def _flush_buffer():
                 started_at=entry["started_at"],
             )
             db.add(log)
+
         db.commit()
-        logger.debug(f"Flushed {len(entries)} connection log entries")
+        logger.info(f"Flushed {len(conn_entries)} connection log entries")
     except Exception as e:
         logger.error(f"Failed to flush connection logs: {e}")
         db.rollback()
@@ -193,11 +312,13 @@ def _ulog_reader_thread():
                 time.sleep(0.1)
                 continue
 
-            if "user:" not in line:
+            # Only process wl_visit (visited) and user (general connection) lines
+            # bl_drop (blocked) is handled by blocked_logger.py
+            if "wl_visit:" not in line and "user:" not in line:
                 continue
 
-            entry = _parse_nflog_line(line)
-            if entry:
+            entry, log_type = _parse_log_line(line)
+            if entry and log_type in ("visited", "connection"):
                 with _buffer_lock:
                     _log_buffer.append(entry)
 

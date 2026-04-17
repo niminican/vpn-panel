@@ -1,0 +1,23 @@
+services:
+  vpn-panel-test:
+    build: .
+    container_name: vpn-panel-test
+    ports:
+      - "8888:8080"
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PANEL_PORT=8080
+      - SECRET_KEY=test-secret-key-not-for-production
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      - WG_INTERFACE=wg0
+      - WG_PORT=51820
+      - WG_SUBNET=10.8.0.0/24
+      - WG_DNS=1.1.1.1,8.8.8.8
+      - WG_SERVER_IP=127.0.0.1
+      - ENCRYPTION_KEY=edz1viJ_Q7I4Mc-XhtJ3XjXJHSTPItxNseFBV3QO5PQ=
+      - DEMO_MODE=true
+      - DRY_RUN=true
+    volumes:
+      - ./data-test:/app/backend/data

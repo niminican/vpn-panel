@@ -83,9 +83,9 @@ export default function Users() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Users ({total})</h1>
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Users ({total})</h1>
         <Link
           to="/users/new"
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -106,18 +106,19 @@ export default function Users() {
         />
       </div>
 
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-x-auto">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">User</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">IP</th>
-              <th className="px-4 py-3">Destination</th>
-              <th className="px-4 py-3">Upload</th>
-              <th className="px-4 py-3">Download</th>
-              <th className="px-4 py-3">Expiry</th>
-              <th className="px-4 py-3 w-10"></th>
+              <th className="px-3 sm:px-4 py-3">User</th>
+              <th className="px-3 sm:px-4 py-3">Status</th>
+              <th className="px-3 sm:px-4 py-3 hidden sm:table-cell">IP</th>
+              <th className="px-3 sm:px-4 py-3 hidden md:table-cell">Destination</th>
+              <th className="px-3 sm:px-4 py-3 hidden sm:table-cell">Upload</th>
+              <th className="px-3 sm:px-4 py-3 hidden sm:table-cell">Download</th>
+              <th className="px-3 sm:px-4 py-3 hidden md:table-cell">Expiry</th>
+              <th className="px-3 sm:px-4 py-3 w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -140,8 +141,8 @@ export default function Users() {
                   className="border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
                   onClick={() => navigate(`/users/${user.id}`)}
                 >
-                  <td className="px-4 py-3 font-medium">{user.username}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 sm:px-4 py-3 font-medium">{user.username}</td>
+                  <td className="px-3 sm:px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       <span
                         className={`h-2 w-2 rounded-full ${
@@ -157,22 +158,22 @@ export default function Users() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">{user.assigned_ip}</td>
-                  <td className="px-4 py-3 text-gray-500">{user.destination_vpn_name || '-'}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 sm:px-4 py-3 text-gray-500 font-mono text-xs hidden sm:table-cell">{user.assigned_ip}</td>
+                  <td className="px-3 sm:px-4 py-3 text-gray-500 hidden md:table-cell">{user.destination_vpn_name || '-'}</td>
+                  <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                     <span className="text-gray-700">{formatBytes(user.bandwidth_used_up)}</span>
                     {user.bandwidth_limit_up && (
                       <span className="text-gray-400 text-xs"> / {formatBytes(user.bandwidth_limit_up)}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                     <span className="text-gray-700">{formatBytes(user.bandwidth_used_down)}</span>
                     {user.bandwidth_limit_down && (
                       <span className="text-gray-400 text-xs"> / {formatBytes(user.bandwidth_limit_down)}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(user.expiry_date)}</td>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 sm:px-4 py-3 text-gray-500 text-xs hidden md:table-cell">{formatDate(user.expiry_date)}</td>
+                  <td className="px-3 sm:px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="relative">
                       <button
                         onClick={() => setMenuOpen(menuOpen === user.id ? null : user.id)}
@@ -215,6 +216,7 @@ export default function Users() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

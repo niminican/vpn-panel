@@ -12,10 +12,12 @@ os.environ["ENCRYPTION_KEY"] = "VPUYje7xwgqKMhB6T5NMnvrtLG75ThsHeVcqLF-5Eog="  #
 os.environ["ADMIN_USERNAME"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "testpass123"
 os.environ["DEMO_MODE"] = "true"
+os.environ["DRY_RUN"] = "true"
 os.environ["WG_SERVER_IP"] = "127.0.0.1"
 
 from app.database import Base, get_db
 from app.main import app
+from app.core.command_executor import clear_command_history
 from app.core.security import hash_password
 from app.core.rate_limiter import login_limiter
 from app.models.admin import Admin
@@ -45,6 +47,7 @@ def setup_database():
     # Reset rate limiter state so tests don't interfere with each other
     login_limiter._attempts.clear()
     login_limiter._lockouts.clear()
+    clear_command_history()
     yield
     Base.metadata.drop_all(bind=engine)
 
@@ -68,6 +71,9 @@ def client():
 @pytest.fixture
 def admin_user(db):
     """Create and return a super_admin user."""
+    existing = db.query(Admin).filter(Admin.username == "testadmin").first()
+    if existing:
+        return existing
     admin = Admin(
         username="testadmin",
         password_hash=hash_password("testpass123"),
